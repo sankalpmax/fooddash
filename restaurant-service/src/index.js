@@ -15,6 +15,7 @@ app.use(cors());
 app.use(express.json());
 
 app.get("/health", (_, res) => res.json({ status: "ok" }));
+app.get("/api/restaurants/health", (_, res) => res.json({ status: "ok" }));
 
 async function init() {
   await pool.query(`
