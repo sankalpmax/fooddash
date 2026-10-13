@@ -166,6 +166,26 @@ docker-compose up --build
 # order-service   → http://localhost:3003
 ```
 
+### Sandbox frontend deployment
+
+The frontend uses `VITE_API_BASE_URL` as its API origin, with the sandbox ALB
+as the default. Set this variable when building if the sandbox ALB hostname
+changes, then upload the new `frontend/dist` files to the S3 origin and
+invalidate the CloudFront distribution so it stops serving the previous
+JavaScript bundle:
+
+```bash
+cd frontend
+VITE_API_BASE_URL=http://fooddash-alb-1673047144.ap-south-2.elb.amazonaws.com npm run build
+aws s3 sync dist/ s3://<sandbox-frontend-bucket>/
+aws cloudfront create-invalidation --distribution-id <sandbox-distribution-id> --paths "/*"
+```
+
+An absolute API origin keeps requests independent of whether the page was
+opened through the ALB or CloudFront. If CloudFront serves the page over HTTPS,
+the browser will block calls to this HTTP ALB as mixed content; use an HTTPS API
+origin or configure CloudFront to forward `/api/*` to the ALB.
+
 ---
 
 ## 7. Cloud Infrastructure — What Will Be Built on AWS
