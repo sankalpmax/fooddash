@@ -1,72 +1,79 @@
-services:
-  db:
-    image: postgres:15
-    environment:
-      POSTGRES_DB: fooddash
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
+services:             ## All containers that make up FoodDash application ##
+
+  db:                              ## PostgreSQL database service ##
+    image: postgres:15             ## Use official PostgreSQL version 15 image ##
+    environment:                   ## Database configuration ##
+      POSTGRES_DB: fooddash        ## Create database named 'fooddash' on startup ##
+      POSTGRES_USER: postgres      ## Database username ##
+      POSTGRES_PASSWORD: postgres  ## Database password ##
     ports:
-      - "5432:5432"
+      - "5432:5432"                ## Map host port 5432 to container port 5432 ##
     volumes:
-      - fooddash_db:/var/lib/postgresql/data
+      - fooddash_db:/var/lib/postgresql/data  ## Persist DB data (survives container restart) ##
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d fooddash"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+      test: ["CMD-SHELL", "pg_isready -U postgres -d fooddash"]  ## Check if DB is ready ##
+      interval: 5s                 ## Check every 5 seconds ##
+      timeout: 5s                  ## Wait max 5 seconds for response ##
+      retries: 10                  ## Try 10 times before marking as unhealthy ##
 
-  user-service:
-    build: ./user-service
-    environment:
-      PORT: 3001
-      DB_HOST: db
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: fooddash
-      JWT_SECRET: fooddash-secret
+  user-service:                    ## User authentication and management service ##
+    build: ./user-service          ## Build image from Dockerfile in ./user-service folder ##
+    image: user-service:v1
+    environment:                   ## Environment variables passed into the container ##
+      PORT: 3001                   ## Service listens on port 3001 ##
+      DB_HOST: db                  ## 'db' = service name above (docker-compose DNS!) ##
+      DB_USER: postgres            ## Database username ##
+      DB_PASSWORD: postgres        ## Database password ##
+      DB_NAME: fooddash            ## Database name to connect to ##
+      DB_SSL: "false"              ## Disable SSL for local PostgreSQL ##
+      JWT_SECRET: fooddash-secret  ## Secret key for JWT token generation ##
     ports:
-      - "3001:3001"
+      - "3001:3001"                ## Expose port 3001 to host machine ##
     depends_on:
       db:
-        condition: service_healthy
+        condition: service_healthy ## Wait for DB healthcheck to pass before starting ##
 
-  restaurant-service:
-    build: ./restaurant-service
-    environment:
-      PORT: 3002
-      DB_HOST: db
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: fooddash
+  restaurant-service:              ## Restaurant and menu management service ##
+    build: ./restaurant-service    ## Build from ./restaurant-service Dockerfile ##
+    image: restaurant-service:v1
+    environment:                   ## Environment variables passed into the container ##
+      PORT: 3002                   ## Service listens on port 3002 ##
+      DB_HOST: db                  ## 'db' = service name (NOT 'postgres') ##
+      DB_USER: postgres            ## Database username ##
+      DB_PASSWORD: postgres        ## Database password ##
+      DB_NAME: fooddash            ## Database name to connect to ##
+      DB_SSL: "false"              ## Disable SSL for local PostgreSQL ##
     ports:
-      - "3002:3002"
+      - "3002:3002"                ## Expose port 3002 to host machine ##
     depends_on:
       db:
-        condition: service_healthy
+        condition: service_healthy ## Wait for DB healthcheck to pass before starting ##
 
-  order-service:
-    build: ./order-service
-    environment:
-      PORT: 3003
-      DB_HOST: db
-      DB_USER: postgres
-      DB_PASSWORD: postgres
-      DB_NAME: fooddash
-      JWT_SECRET: fooddash-secret
+  order-service:                   ## Order processing service ##
+    build: ./order-service         ## Build from ./order-service Dockerfile ##
+    image: order-service:v1
+    environment:                   ## Environment variables passed into the container ##
+      PORT: 3003                   ## Service listens on port 3003 ##
+      DB_HOST: db                  ## Database host (service name) ##
+      DB_USER: postgres            ## Database username ##
+      DB_PASSWORD: postgres        ## Database password ##
+      DB_NAME: fooddash            ## Database name to connect to ##
+      DB_SSL: "false"              ## Disable SSL for local PostgreSQL ##
+      JWT_SECRET: fooddash-secret  ## Secret key for JWT token generation ##
     ports:
-      - "3003:3003"
+      - "3003:3003"                ## Expose port 3003 to host machine ##
     depends_on:
       db:
-        condition: service_healthy
+        condition: service_healthy ## Wait for DB healthcheck to pass before starting ##
 
-  frontend:
-    build: ./frontend
+  frontend:                        ## React frontend application ##
+    build: ./frontend              ## Build from ./frontend Dockerfile ##
     ports:
-      - "3000:3000"
-    depends_on:
+      - "3000:3000"                ## Expose port 3000 to host machine ##
+    depends_on:                    ## Wait for all backend services before starting ##
       - user-service
       - restaurant-service
       - order-service
 
-volumes:
-  fooddash_db:
+volumes:                           ## Named volumes (at ROOT level, NOT inside services!) ##
+  fooddash_db:                     ## Persistent storage for PostgreSQL data ##

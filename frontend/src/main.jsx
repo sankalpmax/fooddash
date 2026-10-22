@@ -1,13 +1,10 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
-  || "http://fooddash-alb-1673047144.ap-south-2.elb.amazonaws.com";
-
 const API = {
-  users: API_BASE_URL,
-  restaurants: API_BASE_URL,
-  orders: API_BASE_URL
+  users: import.meta.env.VITE_USER_SERVICE_URL || "http://localhost:3001",
+  restaurants: import.meta.env.VITE_RESTAURANT_SERVICE_URL || "http://localhost:3002",
+  orders: import.meta.env.VITE_ORDER_SERVICE_URL || "http://localhost:3003"
 };
 
 function App() {
