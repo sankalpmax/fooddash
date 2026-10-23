@@ -14,4 +14,4 @@ jobs:                              # what job does this pipeline should do  ?
         uses: actions/checkout@v3  
 
       - name: Build Docker image   # build docker image from the user-service/dockerfile
-        run: docker build -t user-service:$(( github.sha )) ./userservice  #uniqe commit ID used as name tag for userservice docker build 
+        run: docker build -t user-service:${{ github.sha }} ./user-service  #uniqe commit ID used as name tag for userservice docker build 
