@@ -3,7 +3,7 @@ name: User Service CI   # Name of the pipeline  - shown in GitHub Actions tab
 on:
   push:                             # Trigger on git push 
     branches: 
-     - feature/docker-cicd          # triggeres only when pushed to this branch
+     - feature/docker-cicd-1          # triggeres only when pushed to this branch
 
 jobs:                              # what job does this pipeline should do  ?
   build:                           # Job name ('name-build')
