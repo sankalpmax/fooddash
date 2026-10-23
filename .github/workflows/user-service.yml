@@ -1,0 +1,17 @@
+name: User Service CI   # Name of the pipeline  - shown in GitHub Actions tab 
+# Trigger - WHEN should this pipline run ?
+on:
+  push:                             # Trigger on git push 
+    branches: 
+     - feature/docker-cicd          # triggeres only when pushed to this branch
+
+jobs:                              # what job does this pipeline should do  ?
+  build:                           # Job name ('name-build')
+    runs-on: ubuntu-latest         # only run on ubuntu when pushed tp branch
+
+    steps:                         # individual task's inside the job
+      - name: checkout code        # Downloads the code from github onto ubuntu machine 
+        uses: actions/checkout@v3  
+
+      - name: Build Docker image   # build docker image from the user-service/dockerfile
+        run: docker build -t user-service:$(( github.sha )) ./userservice  #uniqe commit ID used as name tag for userservice docker build 
