@@ -1,17 +1,42 @@
-name: User Service CI   # Name of the pipeline  - shown in GitHub Actions tab 
-# Trigger - WHEN should this pipline run ?
+# CI Pipeline for all FoodDash backend services
+name: FoodDash Backend CI
+
+# Trigger - when pushed to this branch
 on:
-  push:                             # Trigger on git push 
-    branches: 
-     - feature/docker-cicd-1          # triggeres only when pushed to this branch
+  push:
+    branches:
+      - feature/docker-cicd-1   # triggers only when pushed to this branch
 
-jobs:                              # what job does this pipeline should do  ?
-  build:                           # Job name ('name-build')
-    runs-on: ubuntu-latest         # only run on ubuntu when pushed tp branch
+jobs:
+  # JOB 1: User Service
+  build-user-service:             # job name changed to be specific
+    runs-on: ubuntu-latest        # run on GitHub ubuntu machine
 
-    steps:                         # individual task's inside the job
-      - name: checkout code        # Downloads the code from github onto ubuntu machine 
-        uses: actions/checkout@v3  
+    steps:
+      - name: Checkout code       # download code from github onto ubuntu machine
+        uses: actions/checkout@v3
 
-      - name: Build Docker image   # build docker image from the user-service/dockerfile
-        run: docker build -t user-service:${{ github.sha }} ./user-service  #uniqe commit ID used as name tag for userservice docker build 
+      - name: Build user-service Docker image    # build from user-service/Dockerfile
+        run: docker build -t user-service:${{ github.sha }} ./user-service
+
+  # JOB 2: Restaurant Service
+  build-restaurant-service:       # separate job for restaurant-service
+    runs-on: ubuntu-latest        # each job gets its own ubuntu machine
+
+    steps:
+      - name: Checkout code       # each job must checkout code independently
+        uses: actions/checkout@v3
+
+      - name: Build restaurant-service Docker image   # build from restaurant-service/Dockerfile
+        run: docker build -t restaurant-service:${{ github.sha }} ./restaurant-service
+
+  # JOB 3: Order Service
+  build-order-service:            # separate job for order-service
+    runs-on: ubuntu-latest        # each job gets its own ubuntu machine
+
+    steps:
+      - name: Checkout code       # each job must checkout code independently
+        uses: actions/checkout@v3
+
+      - name: Build order-service Docker image    # build from order-service/Dockerfile
+        run: docker build -t order-service:${{ github.sha }} ./order-service
