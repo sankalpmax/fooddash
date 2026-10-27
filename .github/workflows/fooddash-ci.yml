@@ -1,42 +1,129 @@
-# CI Pipeline for all FoodDash backend services
-name: FoodDash Backend CI
+name: FoodDash Backend CI/CD  # Pipeline name 
 
-# Trigger - when pushed to this branch
 on:
   push:
     branches:
-      - feature/docker-cicd-1   # triggers only when pushed to this branch
+      - feature/docker-cicd-1  # Triggers when you push commits to this branch
 
 jobs:
-  # JOB 1: User Service
-  build-user-service:             # job name changed to be specific
-    runs-on: ubuntu-latest        # run on GitHub ubuntu machine
+  # JOB 1: Build and push user-service
+  build-and-push-user-service:
+    runs-on: ubuntu-latest  # GitHub spawns a fresh Ubuntu VM in their cloud (not your local machine)
 
     steps:
-      - name: Checkout code       # download code from github onto ubuntu machine
-        uses: actions/checkout@v3
+      # Step 1: Clone your repository code into the runner's workspace
+      - name: Checkout code
+        uses: actions/checkout@v3  # Without this, the runner is a blank VM with no code
 
-      - name: Build user-service Docker image    # build from user-service/Dockerfile
-        run: docker build -t user-service:${{ github.sha }} ./user-service
+      # Step 2: Authenticate GitHub Actions to your AWS account using IAM user credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}  # Reads encrypted secret from GitHub repo settings
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # Never hardcoded in workflow
+          aws-region: ${{ secrets.AWS_REGION }}  # ap-south-2 (your sandbox)
 
-  # JOB 2: Restaurant Service
-  build-restaurant-service:       # separate job for restaurant-service
-    runs-on: ubuntu-latest        # each job gets its own ubuntu machine
+      # Step 3: Login to Amazon ECR to get a push token (valid for 12 hours)
+      - name: Login to Amazon ECR
+        id: login-ecr  # Stores output in 'steps.login-ecr.outputs.registry'
+        uses: aws-actions/amazon-ecr-login@v2  # Calls 'aws ecr get-login-password' behind the scenes
+
+      # Step 4: Build Docker image LOCALLY on the GitHub runner (not in ECR yet)
+      - name: Build user-service image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}  # Your ECR URL: 926239637076.dkr.ecr.ap-south-2.amazonaws.com
+          IMAGE_TAG: ${{ github.sha }}  # Commit SHA (e.g., abc123def456) - immutable, traceable tag
+        run: |
+          # Reads ./user-service/Dockerfile and builds image locally on the runner
+          # Tags it with full ECR URI so Docker knows where to push
+          docker build -t $ECR_REGISTRY/fooddash/user-service:$IMAGE_TAG ./user-service
+
+      # Step 5: Push the LOCAL image to ECR (remote registry)
+      - name: Push user-service to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Uploads image layers to ECR repo in ap-south-2
+          # Image becomes visible in: AWS Console → ECR → ap-south-2 → fooddash/user-service
+          docker push $ECR_REGISTRY/fooddash/user-service:$IMAGE_TAG
+
+  # JOB 2: Build and push restaurant-service (runs in PARALLEL with Job 1 and Job 3)
+  build-and-push-restaurant-service:
+    runs-on: ubuntu-latest  # GitHub spawns a SEPARATE Ubuntu VM for this job
 
     steps:
-      - name: Checkout code       # each job must checkout code independently
+      # Clone repository code (each job needs its own checkout - runners don't share filesystems)
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Build restaurant-service Docker image   # build from restaurant-service/Dockerfile
-        run: docker build -t restaurant-service:${{ github.sha }} ./restaurant-service
+      # Authenticate to AWS (each job needs its own authentication)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
 
-  # JOB 3: Order Service
-  build-order-service:            # separate job for order-service
-    runs-on: ubuntu-latest        # each job gets its own ubuntu machine
+      # Login to ECR (each job needs its own ECR login token)
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Build restaurant-service image locally on this job's runner
+      - name: Build restaurant-service image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Reads ./restaurant-service/Dockerfile
+          docker build -t $ECR_REGISTRY/fooddash/restaurant-service:$IMAGE_TAG ./restaurant-service
+
+      # Push restaurant-service image to ECR
+      - name: Push restaurant-service to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Uploads to: ECR → ap-south-2 → fooddash/restaurant-service
+          docker push $ECR_REGISTRY/fooddash/restaurant-service:$IMAGE_TAG
+
+  # JOB 3: Build and push order-service (runs in PARALLEL with Job 1 and Job 2)
+  build-and-push-order-service:
+    runs-on: ubuntu-latest  # GitHub spawns a THIRD separate Ubuntu VM for this job
 
     steps:
-      - name: Checkout code       # each job must checkout code independently
+      # Clone repository code
+      - name: Checkout code
         uses: actions/checkout@v3
 
-      - name: Build order-service Docker image    # build from order-service/Dockerfile
-        run: docker build -t order-service:${{ github.sha }} ./order-service
+      # Authenticate to AWS
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Login to ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Build order-service image locally on this job's runner
+      - name: Build order-service image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Reads ./order-service/Dockerfile
+          docker build -t $ECR_REGISTRY/fooddash/order-service:$IMAGE_TAG ./order-service
+
+      # Push order-service image to ECR
+      - name: Push order-service to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Uploads to: ECR → ap-south-2 → fooddash/order-service
+          docker push $ECR_REGISTRY/fooddash/order-service:$IMAGE_TAG
