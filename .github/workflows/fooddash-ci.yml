@@ -227,35 +227,47 @@ jobs:
 
           echo "Found SSM-managed instance: $INSTANCE_ID"
 
-          # ── 2. Base64-encode the deploy script ──
-          # We encode it so it survives transport through SSM parameters
-          # (avoids shell-injection and JSON-escaping issues)
-          SCRIPT_B64=$(base64 -w 0 scripts/deploy.sh)
-
-          # ── 3. Build SSM parameters JSON file ──
-          # AWS-RunShellScript expects a "commands" array of shell commands
-          # The EC2 decodes the script, makes it executable, then runs it with args
-          cat > ssm-params.json << 'PARAMJSON'
-          {
-            "commands": [
-              "echo '__SCRIPT_B64__' | base64 -d > /tmp/deploy.sh",
-              "chmod +x /tmp/deploy.sh",
-              "/tmp/deploy.sh __ECR_REGISTRY__ __IMAGE_TAG__ __AWS_REGION__"
-            ]
-          }
-          PARAMJSON
-
-          # Replace placeholders with actual values (safe — base64 has no shell specials)
-          sed -i "s|__SCRIPT_B64__|$SCRIPT_B64|" ssm-params.json
-          sed -i "s|__ECR_REGISTRY__|$ECR_REGISTRY|" ssm-params.json
-          sed -i "s|__IMAGE_TAG__|$IMAGE_TAG|" ssm-params.json
-          sed -i "s|__AWS_REGION__|$AWS_REGION|" ssm-params.json
-
-          # ── 4. Send the SSM command to the EC2 instance ──
+          # ── 2. Send SSM command directly — no file dependency ──
+          # Commands are passed inline as a JSON array
+          # The EC2 instance runs these commands directly via the SSM agent
           COMMAND_ID=$(aws ssm send-command \
             --document-name "AWS-RunShellScript" \
             --instance-ids "$INSTANCE_ID" \
-            --parameters file://ssm-params.json \
+            --parameters commands="[
+              \"set -e\",
+              \"echo '=== FoodDash Deployment Starting ==='\",
+              \"echo 'Registry: $ECR_REGISTRY'\",
+              \"echo 'Tag: $IMAGE_TAG'\",
+              \"aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_REGISTRY\",
+              \"SECRET=\$(aws secretsmanager get-secret-value --secret-id fooddash/db-credentials --region $AWS_REGION --query SecretString --output text)\",
+              \"DB_HOST=\$(echo \\\$SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)[\\\"DB_HOST\\\"])')\",
+              \"DB_USER=\$(echo \\\$SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)[\\\"DB_USER\\\"])')\",
+              \"DB_PASSWORD=\$(echo \\\$SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)[\\\"DB_PASSWORD\\\"])')\",
+              \"DB_NAME=\$(echo \\\$SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)[\\\"DB_NAME\\\"])')\",
+              \"JWT_SECRET=\$(echo \\\$SECRET | python3 -c 'import sys,json; print(json.load(sys.stdin)[\\\"JWT_SECRET\\\"])')\",
+              \"echo 'Pulling images from ECR...'\",
+              \"docker pull $ECR_REGISTRY/fooddash/user-service:$IMAGE_TAG\",
+              \"docker pull $ECR_REGISTRY/fooddash/restaurant-service:$IMAGE_TAG\",
+              \"docker pull $ECR_REGISTRY/fooddash/order-service:$IMAGE_TAG\",
+              \"docker pull $ECR_REGISTRY/fooddash/frontend:$IMAGE_TAG\",
+              \"echo 'Stopping old containers...'\",
+              \"docker stop fooddash-user fooddash-restaurant fooddash-order fooddash-frontend 2>/dev/null || true\",
+              \"docker rm fooddash-user fooddash-restaurant fooddash-order fooddash-frontend 2>/dev/null || true\",
+              \"echo 'Starting new containers...'\",
+              \"docker run -d --name fooddash-user -p 3001:3001 -e DB_HOST=\\\$DB_HOST -e DB_USER=\\\$DB_USER -e DB_PASSWORD=\\\$DB_PASSWORD -e DB_NAME=\\\$DB_NAME -e PORT=3001 -e JWT_SECRET=\\\$JWT_SECRET --restart unless-stopped $ECR_REGISTRY/fooddash/user-service:$IMAGE_TAG\",
+              \"docker run -d --name fooddash-restaurant -p 3002:3002 -e DB_HOST=\\\$DB_HOST -e DB_USER=\\\$DB_USER -e DB_PASSWORD=\\\$DB_PASSWORD -e DB_NAME=\\\$DB_NAME -e PORT=3002 -e JWT_SECRET=\\\$JWT_SECRET --restart unless-stopped $ECR_REGISTRY/fooddash/restaurant-service:$IMAGE_TAG\",
+              \"docker run -d --name fooddash-order -p 3003:3003 -e DB_HOST=\\\$DB_HOST -e DB_USER=\\\$DB_USER -e DB_PASSWORD=\\\$DB_PASSWORD -e DB_NAME=\\\$DB_NAME -e PORT=3003 -e JWT_SECRET=\\\$JWT_SECRET --restart unless-stopped $ECR_REGISTRY/fooddash/order-service:$IMAGE_TAG\",
+              \"docker run -d --name fooddash-frontend -p 3000:3000 --restart unless-stopped $ECR_REGISTRY/fooddash/frontend:$IMAGE_TAG\",
+              \"echo 'Running health checks...'\",
+              \"sleep 10\",
+              \"curl -sf http://localhost:3001/health || (echo 'user-service health check FAILED' && exit 1)\",
+              \"curl -sf http://localhost:3002/health || (echo 'restaurant-service health check FAILED' && exit 1)\",
+              \"curl -sf http://localhost:3003/health || (echo 'order-service health check FAILED' && exit 1)\",
+              \"curl -sf -o /dev/null http://localhost:3000 || (echo 'frontend health check FAILED' && exit 1)\",
+              \"docker image prune -f\",
+              \"echo '=== Deployment Complete ==='\",
+              \"echo 'Tag: $IMAGE_TAG'\"
+            ]" \
             --query 'Command.CommandId' \
             --output text)
 
