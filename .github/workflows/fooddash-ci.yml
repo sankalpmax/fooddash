@@ -207,20 +207,21 @@ jobs:
           AWS_REGION: ${{ secrets.AWS_REGION }}
         run: |
           # ── 1. Find the SSM-managed EC2 instance by tag ──
-          # The ASG launches instances tagged with Name=fooddash-app-server
-          # describe-instance-information only returns instances with SSM agent running
+          # The ASG tags instances with Name=fooddash-asg (ASG tag overrides launch template tag)
+          # So we search by Project tag which is consistent across all instances
           INSTANCE_ID=$(aws ssm describe-instance-information \
-            --filter "Key=tag:Name,Values=fooddash-app-server" \
+            --filter "Key=tag:Project,Values=fooddash" \
             --query 'InstanceInformationList[0].InstanceId' \
             --output text)
 
           if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
-            echo "ERROR: No SSM-managed EC2 instance found with tag Name=fooddash-app-server"
+            echo "ERROR: No SSM-managed EC2 instance found with tag Project=fooddash"
             echo ""
             echo "Check that:"
             echo "  1. The ASG has launched an instance (desired_capacity > 0)"
             echo "  2. The SSM agent is running on the instance"
-            echo "  3. The instance has the tag Name=fooddash-app-server"
+            echo "  3. The instance has the tag Project=fooddash"
+            echo "  4. VPC endpoints for SSM exist (or NAT Gateway is running)"
             exit 1
           fi
 
