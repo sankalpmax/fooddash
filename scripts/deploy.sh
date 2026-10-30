@@ -1,7 +1,6 @@
 #!/bin/bash
 # FoodDash Deploy Script
-# Called by GitHub Actions deploy job
-# Generates ssm-deploy.json and sends it to EC2 via SSM
+# Runs on GitHub Actions runner — fetches secrets here, passes values to EC2 via SSM
 #
 # Required env vars (set by GitHub Actions):
 #   ECR_REGISTRY  - e.g. 926239637076.dkr.ecr.ap-south-2.amazonaws.com
@@ -10,7 +9,7 @@
 
 set -euo pipefail
 
-# ── 1. Find the SSM-managed EC2 instance ──────────────────────────────────────
+# ── 1. Find the SSM-managed EC2 instance ─────────────────────────────────────
 echo ">>> Finding EC2 instance..."
 INSTANCE_ID=$(aws ssm describe-instance-information \
   --filter "Key=tag:Project,Values=fooddash" \
@@ -21,37 +20,49 @@ if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
   echo "ERROR: No SSM-managed EC2 instance found with tag Project=fooddash"
   exit 1
 fi
-
 echo "Found instance: $INSTANCE_ID"
 
-# ── 2. Generate the SSM command JSON ─────────────────────────────────────────
-# We write the JSON cleanly using Python so no shell escaping issues.
-# ECR_REGISTRY, IMAGE_TAG, AWS_REGION are substituted here on the runner.
-# All $ variables in the commands array run on the EC2 instance.
+# ── 2. Fetch secrets HERE on the GitHub runner ───────────────────────────────
+# This avoids all JSON parsing complexity on the EC2 instance.
+# The runner has AWS credentials and VPC access — fetch once, pass as values.
+echo ">>> Fetching secrets from Secrets Manager..."
+SECRET=$(aws secretsmanager get-secret-value \
+  --secret-id fooddash/db-credentials \
+  --region "$AWS_REGION" \
+  --query SecretString \
+  --output text)
+
+DB_HOST=$(echo $SECRET     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_HOST'])")
+DB_USER=$(echo $SECRET     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_USER'])")
+DB_PASSWORD=$(echo $SECRET | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_PASSWORD'])")
+DB_NAME=$(echo $SECRET     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_NAME'])")
+JWT_SECRET=$(echo $SECRET  | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['JWT_SECRET'])")
+
+echo "DB_HOST: $DB_HOST"
+echo "DB_NAME: $DB_NAME"
+echo "Secrets fetched successfully"
+
+# ── 3. Generate the SSM command JSON ─────────────────────────────────────────
+# All values are expanded HERE on the runner — EC2 receives plain strings.
+# No variable expansion or JSON parsing happens on the EC2.
 python3 - <<PYEOF
 import json, os
 
-reg    = os.environ['ECR_REGISTRY']
-tag    = os.environ['IMAGE_TAG']
-region = os.environ['AWS_REGION']
+reg      = os.environ['ECR_REGISTRY']
+tag      = os.environ['IMAGE_TAG']
+region   = os.environ['AWS_REGION']
+db_host  = os.environ['DB_HOST']
+db_user  = os.environ['DB_USER']
+db_pass  = os.environ['DB_PASSWORD']
+db_name  = os.environ['DB_NAME']
+jwt      = os.environ['JWT_SECRET']
 
 commands = [
     'set -e',
-    'ECR_REGISTRY=' + reg,
-    'IMAGE_TAG=' + tag,
-    'AWS_REGION=' + region,
     'echo "=== FoodDash Deployment ==="',
-    'echo "Tag: $IMAGE_TAG"',
+    'echo "Tag: ' + tag + '"',
     # ECR login
-    'aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY',
-    # Fetch secrets
-    'SECRET=$(aws secretsmanager get-secret-value --secret-id fooddash/db-credentials --region $AWS_REGION --query SecretString --output text)',
-    'DB_HOST=$(echo $SECRET | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d[\"DB_HOST\"])")',
-    'DB_USER=$(echo $SECRET | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d[\"DB_USER\"])")',
-    'DB_PASSWORD=$(echo $SECRET | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d[\"DB_PASSWORD\"])")',
-    'DB_NAME=$(echo $SECRET | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d[\"DB_NAME\"])")',
-    'JWT_SECRET=$(echo $SECRET | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d[\"JWT_SECRET\"])")',
-    'echo "DB_HOST: $DB_HOST"',
+    'aws ecr get-login-password --region ' + region + ' | sudo docker login --username AWS --password-stdin ' + reg,
     # Stop pm2 and free ports
     'sudo systemctl stop pm2-ubuntu.service 2>/dev/null || true',
     'sudo systemctl disable pm2-ubuntu.service 2>/dev/null || true',
@@ -67,16 +78,16 @@ commands = [
     'sleep 2',
     # Pull images
     'echo "Pulling images..."',
-    'sudo docker pull $ECR_REGISTRY/fooddash/user-service:$IMAGE_TAG',
-    'sudo docker pull $ECR_REGISTRY/fooddash/restaurant-service:$IMAGE_TAG',
-    'sudo docker pull $ECR_REGISTRY/fooddash/order-service:$IMAGE_TAG',
-    'sudo docker pull $ECR_REGISTRY/fooddash/frontend:$IMAGE_TAG',
-    # Start containers
+    'sudo docker pull ' + reg + '/fooddash/user-service:' + tag,
+    'sudo docker pull ' + reg + '/fooddash/restaurant-service:' + tag,
+    'sudo docker pull ' + reg + '/fooddash/order-service:' + tag,
+    'sudo docker pull ' + reg + '/fooddash/frontend:' + tag,
+    # Start containers — all values are plain strings, no shell expansion needed
     'echo "Starting containers..."',
-    'sudo docker run -d --name fooddash-user       -p 3001:3001 -e PORT=3001 -e DB_HOST=$DB_HOST -e DB_USER=$DB_USER -e DB_PASSWORD=$DB_PASSWORD -e DB_NAME=$DB_NAME -e JWT_SECRET=$JWT_SECRET --restart unless-stopped $ECR_REGISTRY/fooddash/user-service:$IMAGE_TAG',
-    'sudo docker run -d --name fooddash-restaurant -p 3002:3002 -e PORT=3002 -e DB_HOST=$DB_HOST -e DB_USER=$DB_USER -e DB_PASSWORD=$DB_PASSWORD -e DB_NAME=$DB_NAME -e JWT_SECRET=$JWT_SECRET --restart unless-stopped $ECR_REGISTRY/fooddash/restaurant-service:$IMAGE_TAG',
-    'sudo docker run -d --name fooddash-order      -p 3003:3003 -e PORT=3003 -e DB_HOST=$DB_HOST -e DB_USER=$DB_USER -e DB_PASSWORD=$DB_PASSWORD -e DB_NAME=$DB_NAME -e JWT_SECRET=$JWT_SECRET --restart unless-stopped $ECR_REGISTRY/fooddash/order-service:$IMAGE_TAG',
-    'sudo docker run -d --name fooddash-frontend   -p 3000:3000 --restart unless-stopped $ECR_REGISTRY/fooddash/frontend:$IMAGE_TAG',
+    'sudo docker run -d --name fooddash-user       -p 3001:3001 -e PORT=3001 -e DB_HOST=' + db_host + ' -e DB_USER=' + db_user + ' -e DB_PASSWORD=' + db_pass + ' -e DB_NAME=' + db_name + ' -e JWT_SECRET=' + jwt + ' --restart unless-stopped ' + reg + '/fooddash/user-service:' + tag,
+    'sudo docker run -d --name fooddash-restaurant -p 3002:3002 -e PORT=3002 -e DB_HOST=' + db_host + ' -e DB_USER=' + db_user + ' -e DB_PASSWORD=' + db_pass + ' -e DB_NAME=' + db_name + ' -e JWT_SECRET=' + jwt + ' --restart unless-stopped ' + reg + '/fooddash/restaurant-service:' + tag,
+    'sudo docker run -d --name fooddash-order      -p 3003:3003 -e PORT=3003 -e DB_HOST=' + db_host + ' -e DB_USER=' + db_user + ' -e DB_PASSWORD=' + db_pass + ' -e DB_NAME=' + db_name + ' -e JWT_SECRET=' + jwt + ' --restart unless-stopped ' + reg + '/fooddash/order-service:' + tag,
+    'sudo docker run -d --name fooddash-frontend   -p 3000:3000 --restart unless-stopped ' + reg + '/fooddash/frontend:' + tag,
     # Health checks
     'echo "Running health checks..."',
     'sleep 15',
@@ -91,10 +102,13 @@ commands = [
 with open('/tmp/ssm-deploy.json', 'w') as f:
     json.dump({'commands': commands}, f, indent=2)
 
-print('SSM JSON written to /tmp/ssm-deploy.json')
+print('SSM JSON written successfully')
 PYEOF
 
-# ── 3. Send SSM command ───────────────────────────────────────────────────────
+# ── 4. Export secrets so Python can read them ─────────────────────────────────
+export DB_HOST DB_USER DB_PASSWORD DB_NAME JWT_SECRET
+
+# ── 5. Send SSM command ───────────────────────────────────────────────────────
 echo ">>> Sending SSM command to $INSTANCE_ID..."
 COMMAND_ID=$(aws ssm send-command \
   --document-name "AWS-RunShellScript" \
@@ -105,7 +119,7 @@ COMMAND_ID=$(aws ssm send-command \
 
 echo "SSM Command ID: $COMMAND_ID"
 
-# ── 4. Poll for completion ────────────────────────────────────────────────────
+# ── 6. Poll for completion ────────────────────────────────────────────────────
 STATUS="InProgress"
 ATTEMPTS=0
 MAX_ATTEMPTS=60
@@ -125,7 +139,7 @@ while [ "$STATUS" = "InProgress" ] || [ "$STATUS" = "Pending" ]; do
   echo "  Status: $STATUS ($ATTEMPTS/$MAX_ATTEMPTS)"
 done
 
-# ── 5. Print output ───────────────────────────────────────────────────────────
+# ── 7. Print output ───────────────────────────────────────────────────────────
 echo ""
 echo "=== Deployment Output ==="
 aws ssm get-command-invocation \
