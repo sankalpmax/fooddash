@@ -46,11 +46,11 @@ commands = [
     'aws ecr get-login-password --region $AWS_REGION | sudo docker login --username AWS --password-stdin $ECR_REGISTRY',
     # Fetch secrets
     'SECRET=$(aws secretsmanager get-secret-value --secret-id fooddash/db-credentials --region $AWS_REGION --query SecretString --output text)',
-    'DB_HOST=$(echo "$SECRET" | python3 -c "import sys,json; print(json.load(sys.stdin)[\'DB_HOST\'])")',
-    'DB_USER=$(echo "$SECRET" | python3 -c "import sys,json; print(json.load(sys.stdin)[\'DB_USER\'])")',
-    'DB_PASSWORD=$(echo "$SECRET" | python3 -c "import sys,json; print(json.load(sys.stdin)[\'DB_PASSWORD\'])")',
-    'DB_NAME=$(echo "$SECRET" | python3 -c "import sys,json; print(json.load(sys.stdin)[\'DB_NAME\'])")',
-    'JWT_SECRET=$(echo "$SECRET" | python3 -c "import sys,json; print(json.load(sys.stdin)[\'JWT_SECRET\'])")',
+    'DB_HOST=$(echo "$SECRET" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[\"DB_HOST\"])")',
+    'DB_USER=$(echo "$SECRET" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[\"DB_USER\"])")',
+    'DB_PASSWORD=$(echo "$SECRET" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[\"DB_PASSWORD\"])")',
+    'DB_NAME=$(echo "$SECRET" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[\"DB_NAME\"])")',
+    'JWT_SECRET=$(echo "$SECRET" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d[\"JWT_SECRET\"])")',
     'echo "DB_HOST: $DB_HOST"',
     # Stop pm2 and free ports
     'sudo systemctl stop pm2-ubuntu.service 2>/dev/null || true',
