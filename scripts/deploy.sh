@@ -88,12 +88,13 @@ commands = [
     'sudo docker pull ' + reg + '/fooddash/restaurant-service:' + tag,
     'sudo docker pull ' + reg + '/fooddash/order-service:' + tag,
     'sudo docker pull ' + reg + '/fooddash/frontend:' + tag,
-    # Start containers — all values are plain strings, no shell expansion needed
+    # Start containers with host networking so they use EC2's network interface
+    # This ensures RDS security group allows traffic (comes from EC2 IP not Docker bridge)
     'echo "Starting containers..."',
-    'sudo docker run -d --name fooddash-user       -p 3001:3001 -e PORT=3001 -e DB_HOST=' + db_host + ' -e DB_USER=' + db_user + ' -e DB_PASSWORD=' + db_pass + ' -e DB_NAME=' + db_name + ' -e JWT_SECRET=' + jwt + ' --restart unless-stopped ' + reg + '/fooddash/user-service:' + tag,
-    'sudo docker run -d --name fooddash-restaurant -p 3002:3002 -e PORT=3002 -e DB_HOST=' + db_host + ' -e DB_USER=' + db_user + ' -e DB_PASSWORD=' + db_pass + ' -e DB_NAME=' + db_name + ' -e JWT_SECRET=' + jwt + ' --restart unless-stopped ' + reg + '/fooddash/restaurant-service:' + tag,
-    'sudo docker run -d --name fooddash-order      -p 3003:3003 -e PORT=3003 -e DB_HOST=' + db_host + ' -e DB_USER=' + db_user + ' -e DB_PASSWORD=' + db_pass + ' -e DB_NAME=' + db_name + ' -e JWT_SECRET=' + jwt + ' --restart unless-stopped ' + reg + '/fooddash/order-service:' + tag,
-    'sudo docker run -d --name fooddash-frontend   -p 3000:3000 --restart unless-stopped ' + reg + '/fooddash/frontend:' + tag,
+    'sudo docker run -d --name fooddash-user       --network host -e PORT=3001 -e DB_HOST=' + db_host + ' -e DB_USER=' + db_user + ' -e DB_PASSWORD=' + db_pass + ' -e DB_NAME=' + db_name + ' -e JWT_SECRET=' + jwt + ' --restart unless-stopped ' + reg + '/fooddash/user-service:' + tag,
+    'sudo docker run -d --name fooddash-restaurant --network host -e PORT=3002 -e DB_HOST=' + db_host + ' -e DB_USER=' + db_user + ' -e DB_PASSWORD=' + db_pass + ' -e DB_NAME=' + db_name + ' -e JWT_SECRET=' + jwt + ' --restart unless-stopped ' + reg + '/fooddash/restaurant-service:' + tag,
+    'sudo docker run -d --name fooddash-order      --network host -e PORT=3003 -e DB_HOST=' + db_host + ' -e DB_USER=' + db_user + ' -e DB_PASSWORD=' + db_pass + ' -e DB_NAME=' + db_name + ' -e JWT_SECRET=' + jwt + ' --restart unless-stopped ' + reg + '/fooddash/order-service:' + tag,
+    'sudo docker run -d --name fooddash-frontend   --network host -e PORT=3000 --restart unless-stopped ' + reg + '/fooddash/frontend:' + tag,
     # Health checks with retries
     'echo "Running health checks..."',
     'sleep 20',
