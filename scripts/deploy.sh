@@ -32,11 +32,21 @@ SECRET=$(aws secretsmanager get-secret-value \
   --query SecretString \
   --output text)
 
-DB_HOST=$(echo $SECRET     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_HOST'])")
-DB_USER=$(echo $SECRET     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_USER'])")
-DB_PASSWORD=$(echo $SECRET | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_PASSWORD'])")
-DB_NAME=$(echo $SECRET     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_NAME'])")
-JWT_SECRET=$(echo $SECRET  | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['JWT_SECRET'])")
+# Debug: show secret length and first 20 chars (no sensitive values)
+echo "Secret length: ${#SECRET} chars"
+echo "Secret preview: ${SECRET:0:20}..."
+
+# Use --output json and parse the SecretString field to avoid text format issues
+SECRET_JSON=$(aws secretsmanager get-secret-value \
+  --secret-id fooddash/db-credentials \
+  --region "$AWS_REGION" \
+  --output json | python3 -c "import sys,json; print(json.load(sys.stdin)['SecretString'])")
+
+DB_HOST=$(echo $SECRET_JSON     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_HOST'])")
+DB_USER=$(echo $SECRET_JSON     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_USER'])")
+DB_PASSWORD=$(echo $SECRET_JSON | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_PASSWORD'])")
+DB_NAME=$(echo $SECRET_JSON     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_NAME'])")
+JWT_SECRET=$(echo $SECRET_JSON  | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['JWT_SECRET'])")
 
 echo "DB_HOST: $DB_HOST"
 echo "DB_NAME: $DB_NAME"
