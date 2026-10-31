@@ -26,27 +26,20 @@ echo "Found instance: $INSTANCE_ID"
 # This avoids all JSON parsing complexity on the EC2 instance.
 # The runner has AWS credentials and VPC access — fetch once, pass as values.
 echo ">>> Fetching secrets from Secrets Manager..."
-SECRET=$(aws secretsmanager get-secret-value \
+SECRET_JSON=$(aws secretsmanager get-secret-value \
   --secret-id fooddash/db-credentials \
   --region "$AWS_REGION" \
   --query SecretString \
   --output text)
 
-# Debug: show secret length and first 20 chars (no sensitive values)
-echo "Secret length: ${#SECRET} chars"
-echo "Secret preview: ${SECRET:0:20}..."
+echo "Secret fetched, length: ${#SECRET_JSON} chars"
 
-# Use --output json and parse the SecretString field to avoid text format issues
-SECRET_JSON=$(aws secretsmanager get-secret-value \
-  --secret-id fooddash/db-credentials \
-  --region "$AWS_REGION" \
-  --output json | python3 -c "import sys,json; print(json.load(sys.stdin)['SecretString'])")
-
-DB_HOST=$(echo $SECRET_JSON     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_HOST'])")
-DB_USER=$(echo $SECRET_JSON     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_USER'])")
-DB_PASSWORD=$(echo $SECRET_JSON | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_PASSWORD'])")
-DB_NAME=$(echo $SECRET_JSON     | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['DB_NAME'])")
-JWT_SECRET=$(echo $SECRET_JSON  | python3 -c "import sys,json; d=json.loads(sys.stdin.read().strip()); print(d['JWT_SECRET'])")
+# Pass JSON as argument to avoid all pipe/stdin/echo formatting issues
+DB_HOST=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['DB_HOST'])" "$SECRET_JSON")
+DB_USER=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['DB_USER'])" "$SECRET_JSON")
+DB_PASSWORD=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['DB_PASSWORD'])" "$SECRET_JSON")
+DB_NAME=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['DB_NAME'])" "$SECRET_JSON")
+JWT_SECRET=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['JWT_SECRET'])" "$SECRET_JSON")
 
 echo "DB_HOST: $DB_HOST"
 echo "DB_NAME: $DB_NAME"
