@@ -94,13 +94,13 @@ commands = [
     'sudo docker run -d --name fooddash-restaurant -p 3002:3002 -e PORT=3002 -e DB_HOST=' + db_host + ' -e DB_USER=' + db_user + ' -e DB_PASSWORD=' + db_pass + ' -e DB_NAME=' + db_name + ' -e JWT_SECRET=' + jwt + ' --restart unless-stopped ' + reg + '/fooddash/restaurant-service:' + tag,
     'sudo docker run -d --name fooddash-order      -p 3003:3003 -e PORT=3003 -e DB_HOST=' + db_host + ' -e DB_USER=' + db_user + ' -e DB_PASSWORD=' + db_pass + ' -e DB_NAME=' + db_name + ' -e JWT_SECRET=' + jwt + ' --restart unless-stopped ' + reg + '/fooddash/order-service:' + tag,
     'sudo docker run -d --name fooddash-frontend   -p 3000:3000 --restart unless-stopped ' + reg + '/fooddash/frontend:' + tag,
-    # Health checks
+    # Health checks with retries
     'echo "Running health checks..."',
-    'sleep 15',
-    'curl -sf http://localhost:3001/health || (echo "user-service FAILED" && sudo docker logs fooddash-user --tail 30 && exit 1)',
-    'curl -sf http://localhost:3002/health || (echo "restaurant-service FAILED" && sudo docker logs fooddash-restaurant --tail 30 && exit 1)',
-    'curl -sf http://localhost:3003/health || (echo "order-service FAILED" && sudo docker logs fooddash-order --tail 30 && exit 1)',
-    'curl -sf -o /dev/null http://localhost:3000 || (echo "frontend FAILED" && sudo docker logs fooddash-frontend --tail 30 && exit 1)',
+    'sleep 20',
+    'for i in 1 2 3 4 5; do curl -sf http://localhost:3001/health && break || (echo "user-service not ready, retry $i" && sleep 10); done || (echo "user-service FAILED" && sudo docker logs fooddash-user --tail 30 && exit 1)',
+    'for i in 1 2 3 4 5; do curl -sf http://localhost:3002/health && break || (echo "restaurant-service not ready, retry $i" && sleep 10); done || (echo "restaurant-service FAILED" && sudo docker logs fooddash-restaurant --tail 30 && exit 1)',
+    'for i in 1 2 3 4 5; do curl -sf http://localhost:3003/health && break || (echo "order-service not ready, retry $i" && sleep 10); done || (echo "order-service FAILED" && sudo docker logs fooddash-order --tail 30 && exit 1)',
+    'for i in 1 2 3 4 5; do curl -sf -o /dev/null http://localhost:3000 && break || (echo "frontend not ready, retry $i" && sleep 10); done || (echo "frontend FAILED" && sudo docker logs fooddash-frontend --tail 30 && exit 1)',
     'sudo docker image prune -f',
     'echo "=== Deployment Complete ==="',
 ]
