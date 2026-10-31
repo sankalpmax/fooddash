@@ -51,7 +51,7 @@ export DB_HOST DB_USER DB_PASSWORD DB_NAME JWT_SECRET
 # ── 3. Generate the SSM command JSON ─────────────────────────────────────────
 # All values are expanded HERE on the runner — EC2 receives plain strings.
 # No variable expansion or JSON parsing happens on the EC2.
-python3 - <<PYEOF
+python3 - <<"PYEOF"
 import json, os
 
 reg      = os.environ['ECR_REGISTRY']
@@ -97,10 +97,7 @@ commands = [
     # Health checks with retries
     'echo "Running health checks..."',
     'sleep 20',
-    'for i in 1 2 3 4 5; do curl -sf http://localhost:3001/health && break || (echo "user-service not ready, retry $i" && sleep 10); done || (echo "user-service FAILED" && sudo docker logs fooddash-user --tail 30 && exit 1)',
-    'for i in 1 2 3 4 5; do curl -sf http://localhost:3002/health && break || (echo "restaurant-service not ready, retry $i" && sleep 10); done || (echo "restaurant-service FAILED" && sudo docker logs fooddash-restaurant --tail 30 && exit 1)',
-    'for i in 1 2 3 4 5; do curl -sf http://localhost:3003/health && break || (echo "order-service not ready, retry $i" && sleep 10); done || (echo "order-service FAILED" && sudo docker logs fooddash-order --tail 30 && exit 1)',
-    'for i in 1 2 3 4 5; do curl -sf -o /dev/null http://localhost:3000 && break || (echo "frontend not ready, retry $i" && sleep 10); done || (echo "frontend FAILED" && sudo docker logs fooddash-frontend --tail 30 && exit 1)',
+    'for svc_port in "3001:/health" "3002:/health" "3003:/health" "3000:/"; do port=${svc_port%%:*}; path=${svc_port##*:}; ok=0; for attempt in $(seq 1 5); do curl -sf http://localhost:$port$path && ok=1 && break || sleep 10; done; [ $ok -eq 1 ] || (echo "Service on port $port FAILED" && exit 1); done',
     'sudo docker image prune -f',
     'echo "=== Deployment Complete ==="',
 ]
