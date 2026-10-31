@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
-  || "http://fooddash-alb-1673047144.ap-south-2.elb.amazonaws.com";
+  || "http://fooddash-production-1133168556.ap-south-2.elb.amazonaws.com";
 
 const API = {
   users: API_BASE_URL,
