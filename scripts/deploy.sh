@@ -45,6 +45,9 @@ echo "DB_HOST: $DB_HOST"
 echo "DB_NAME: $DB_NAME"
 echo "Secrets fetched successfully"
 
+# Export so the Python heredoc can read them via os.environ
+export DB_HOST DB_USER DB_PASSWORD DB_NAME JWT_SECRET
+
 # ── 3. Generate the SSM command JSON ─────────────────────────────────────────
 # All values are expanded HERE on the runner — EC2 receives plain strings.
 # No variable expansion or JSON parsing happens on the EC2.
@@ -107,9 +110,6 @@ with open('/tmp/ssm-deploy.json', 'w') as f:
 
 print('SSM JSON written successfully')
 PYEOF
-
-# ── 4. Export secrets so Python can read them ─────────────────────────────────
-export DB_HOST DB_USER DB_PASSWORD DB_NAME JWT_SECRET
 
 # ── 5. Send SSM command ───────────────────────────────────────────────────────
 echo ">>> Sending SSM command to $INSTANCE_ID..."
