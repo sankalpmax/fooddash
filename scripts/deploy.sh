@@ -12,7 +12,7 @@ set -euo pipefail
 # ── 1. Find the SSM-managed EC2 instance ─────────────────────────────────────
 echo ">>> Finding EC2 instance..."
 INSTANCE_ID=$(aws ssm describe-instance-information \
-  --filter "Key=tag:Project,Values=fooddash" \
+  --filter "Key=tag:aws:autoscaling:groupName,Values=fooddash-asg" \
   --query 'InstanceInformationList[0].InstanceId' \
   --output text)
 
