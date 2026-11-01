@@ -123,7 +123,7 @@ echo "SSM Command ID: $COMMAND_ID"
 # ── 6. Poll for completion ────────────────────────────────────────────────────
 STATUS="InProgress"
 ATTEMPTS=0
-MAX_ATTEMPTS=60
+MAX_ATTEMPTS=90
 
 while [ "$STATUS" = "InProgress" ] || [ "$STATUS" = "Pending" ]; do
   ATTEMPTS=$((ATTEMPTS + 1))
