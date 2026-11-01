@@ -225,9 +225,10 @@ const STYLES = `
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
   || "http://fooddash-production-1133168556.ap-south-2.elb.amazonaws.com";
 
-// In production all APIs go through ALB on same URL
-// In local dev each service runs on its own port
-const IS_LOCAL = API_BASE_URL.includes("localhost") || API_BASE_URL.includes("127.0.0.1");
+// Use Vite's build mode to detect environment — reliable in all cases
+// In production build: import.meta.env.DEV is false
+// In local dev server: import.meta.env.DEV is true
+const IS_LOCAL = import.meta.env.DEV;
 
 const API = {
   users:       IS_LOCAL ? "http://localhost:3001" : API_BASE_URL,
