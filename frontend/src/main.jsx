@@ -284,6 +284,23 @@ function OrderCard({ order, token, onStatusUpdate }) {
   const currentIdx = STATUS_FLOW.findIndex(s => s.key === order.status);
   const nextStep   = STATUS_FLOW[currentIdx + 1];
 
+  // Auto-advance status every 15 seconds until delivered
+  useEffect(() => {
+    if (!nextStep) return; // already delivered
+    const timer = setTimeout(async () => {
+      setLoading(true);
+      const r = await fetch(`${API.orders}/api/orders/${order.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ status: nextStep.key })
+      });
+      const data = await r.json();
+      setLoading(false);
+      if (r.ok) onStatusUpdate(order.id, data.status);
+    }, 15000); // auto advance every 15 seconds
+    return () => clearTimeout(timer);
+  }, [order.status]);
+
   async function updateStatus() {
     if (!nextStep) return;
     setLoading(true);
