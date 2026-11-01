@@ -225,15 +225,12 @@ const STYLES = `
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
   || "http://fooddash-production-1133168556.ap-south-2.elb.amazonaws.com";
 
-// Use Vite's build mode to detect environment — reliable in all cases
-// In production build: import.meta.env.DEV is false
-// In local dev server: import.meta.env.DEV is true
-const IS_LOCAL = import.meta.env.DEV;
-
+// All API calls go through the same base URL (ALB in production, ALB locally via docker-compose)
+// No localhost splitting needed — docker-compose exposes services but ALB URL works everywhere
 const API = {
-  users:       IS_LOCAL ? "http://localhost:3001" : API_BASE_URL,
-  restaurants: IS_LOCAL ? "http://localhost:3002" : API_BASE_URL,
-  orders:      IS_LOCAL ? "http://localhost:3003" : API_BASE_URL,
+  users:       API_BASE_URL,
+  restaurants: API_BASE_URL,
+  orders:      API_BASE_URL,
 };
 
 const STATUS_FLOW = [
