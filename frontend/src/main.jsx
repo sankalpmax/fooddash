@@ -223,7 +223,7 @@ const STYLES = `
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL
-  || "http://fooddash-production-1133168556.ap-south-2.elb.amazonaws.com";
+  || "https://d19dlk7yc7td0b.cloudfront.net";
 
 // All API calls go through the same base URL (ALB in production, ALB locally via docker-compose)
 // No localhost splitting needed — docker-compose exposes services but ALB URL works everywhere
