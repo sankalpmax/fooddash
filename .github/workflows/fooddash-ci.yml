@@ -37,8 +37,16 @@ jobs:
           # Reads ./user-service/Dockerfile and builds image locally on the runner
           # Tags it with full ECR URI so Docker knows where to push
           docker build -t $ECR_REGISTRY/fooddash/user-service:$IMAGE_TAG ./user-service
-
-      # Step 5: Push the LOCAL image to ECR (remote registry)
+      ##Trivy Scan
+      - name: Trivy scan user-service 
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/fooddash/user-service:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0 
+        
+        # Step 5: Push the LOCAL image to ECR (remote registry)
       - name: Push user-service to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
@@ -78,6 +86,16 @@ jobs:
         run: |
           # Reads ./restaurant-service/Dockerfile
           docker build -t $ECR_REGISTRY/fooddash/restaurant-service:$IMAGE_TAG ./restaurant-service
+      ## Trivy Scan 
+      - name: Trivy scan restaurant-service
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/fooddash/restaurant-service:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0    
+
+
 
       # Push restaurant-service image to ECR
       - name: Push restaurant-service to ECR
@@ -118,6 +136,14 @@ jobs:
         run: |
           # Reads ./order-service/Dockerfile
           docker build -t $ECR_REGISTRY/fooddash/order-service:$IMAGE_TAG ./order-service
+      ## Trivy Scan 
+      - name: Trivy scan order-service 
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/fooddash/order-service:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0
 
       # Push order-service image to ECR
       - name: Push order-service to ECR
@@ -160,7 +186,14 @@ jobs:
           # Reads ./frontend/Dockerfile
           # Frontend is a Vite + React app served on port 3000
           docker build -t $ECR_REGISTRY/fooddash/frontend:$IMAGE_TAG ./frontend
-
+      ## Trivy Scan 
+      - name: Trivy scan frontend 
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/fooddash/frontend:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0      
       # Push frontend image to ECR
       - name: Push frontend to ECR
         env:
