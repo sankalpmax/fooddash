@@ -6,6 +6,8 @@ export default defineConfig({
   server: {
     host: '0.0.0.0',
     port: 3000,
-    allowedHosts: true
+    allowedHosts: true,
+    // Disable HMR websocket when running behind CloudFront/ALB
+    hmr: false
   }
 })
