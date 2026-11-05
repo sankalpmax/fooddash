@@ -1,208 +1,71 @@
-# FoodDash — Food Ordering Application
+# FoodDash
 
-## 1. Business Problem
+FoodDash is a portfolio project for a food-ordering application. It contains a React frontend, three Node.js/Express services, and a PostgreSQL database. It is a learning project, not a commercial product or a production-ready service.
 
-FoodDash is a Bangalore based food ordering startup. The development team has built a working application running on a developer's laptop in a local development environment.
+## Project status
 
-The business problem is simple — we have a working application but no infrastructure to serve real customers.
+- The application and Docker Compose setup are prototypes.
+- The GitHub Actions workflow on `feature/docker-cicd-1` is experimental. It builds and publishes container images and invokes an AWS sandbox deployment; it is not a production release pipeline.
+- The workflow's vulnerability scans are currently informational and do not block a deployment.
+- Authentication, authorization, input validation, database TLS, and deployment secret handling need further security work before any production use.
+- AWS infrastructure and application deployment status can change. The Terraform repository documents the infrastructure code separately.
 
-As the Associate Cloud Engineer, the job is to take this application from a developer's laptop to a production environment on AWS — securely, reliably, and with the ability to handle peak traffic during lunch and dinner hours without going down.
+## Architecture
 
-**Three things every cloud infrastructure decision must solve:**
-- **Secure** — database must not be exposed to the internet, credentials must not be hardcoded, network access must be controlled
-- **Reliable** — if one server goes down, the application must keep running, database must have automatic failover
-- **Scalable** — during lunch and dinner hours when traffic spikes, infrastructure must automatically add capacity and remove it when traffic drops
+```text
+Browser
+  └── React + Vite frontend (port 3000)
+        ├── user-service       (port 3001)
+        ├── restaurant-service (port 3002)
+        └── order-service      (port 3003)
+              └── PostgreSQL 15 (port 5432)
+```
 
----
+The services use a shared PostgreSQL database in this prototype. The frontend calls each service through `/api/users`, `/api/restaurants`, and `/api/orders` routes. The `order-service` stores order items as JSON and includes basic JWT-protected order endpoints.
 
-## 2. Application Type
-
-FoodDash is a **Microservices application**.
-
-Each feature is built as an independent service with its own codebase, its own port, and its own responsibility. Services can be deployed, scaled, and updated independently without affecting other services.
-
-**Services:**
-- user-service
-- restaurant-service
-- order-service
-- frontend
-
----
-
-## 3. Features, Services, Ports and Tech Stack
-
-| Layer | Service | Tech Stack | Port | Responsibility |
-|---|---|---|---|---|
-| Frontend | frontend | React + Vite | 3000 | Customer UI — browse restaurants, place orders, login |
-| Backend | user-service | Node.js + Express | 3001 | User registration, login, JWT authentication |
-| Backend | restaurant-service | Node.js + Express | 3002 | List restaurants, view menu items |
-| Backend | order-service | Node.js + Express | 3003 | Place order, view order history |
-| Database | PostgreSQL 15 | PostgreSQL | 5432 | Permanent storage for all services |
-
-### Service Dependencies
-
-**user-service**
-- express, cors, bcryptjs, jsonwebtoken, pg
-
-**restaurant-service**
-- express, cors, pg
-
-**order-service**
-- express, cors, jsonwebtoken, pg
-
-**frontend**
-- react, react-dom, vite, @vitejs/plugin-react
-
-### Database Tables
-
-| Table | Owned By | What It Stores |
+| Component | Stack | Responsibility |
 |---|---|---|
-| users | user-service | id, name, email, password, created_at |
-| restaurants | restaurant-service | id, name, cuisine, location, rating |
-| menu_items | restaurant-service | id, restaurant_id, name, price, description |
-| orders | order-service | id, user_id, restaurant_id, items, total_amount, status, created_at |
+| `frontend/` | React, Vite | Browse restaurants, register/login, and interact with orders |
+| `user-service/` | Express, PostgreSQL, bcrypt, JWT | Registration and login |
+| `restaurant-service/` | Express, PostgreSQL | Restaurant and menu reads |
+| `order-service/` | Express, PostgreSQL, JWT | Create and view a user's orders |
+| `docker-compose.yml` | Docker Compose, PostgreSQL 15 | Local development environment |
 
----
+## Run locally
 
-## 4. How Services Talk to Each Other
-
-### Local Development Flow
-```
-Customer opens browser
-        ↓
-Frontend — port 3000
-        ↓
-Frontend makes direct API calls to backend services
-/api/users/*         → user-service port 3001
-/api/restaurants/*   → restaurant-service port 3002
-/api/orders/*        → order-service port 3003
-        ↓
-Each service connects to PostgreSQL port 5432
-        ↓
-order-service calls restaurant-service internally
-to validate menu items before placing order
-```
-
-### AWS Production Flow (after cloud infrastructure is built)
-```
-Customer opens browser
-        ↓
-Frontend — served from S3 + CloudFront
-        ↓
-Frontend makes API calls to ALB DNS
-        ↓
-ALB (Application Load Balancer) — single entry point
-routes based on URL path
-/api/users/*         → user-service target group port 3001
-/api/restaurants/*   → restaurant-service target group port 3002
-/api/orders/*        → order-service target group port 3003
-        ↓
-Each service connects to RDS PostgreSQL — private subnet port 5432
-        ↓
-order-service calls restaurant-service internally
-```
-
----
-
-## 5. Environment Variables
-
-### Database (docker-compose local)
-```
-POSTGRES_DB: fooddash
-POSTGRES_USER: postgres
-POSTGRES_PASSWORD: postgres
-```
-
-### user-service
-```
-PORT: 3001
-DB_HOST: db
-DB_USER: postgres
-DB_PASSWORD: postgres
-DB_NAME: fooddash
-JWT_SECRET: fooddash-secret
-```
-
-### restaurant-service
-```
-PORT: 3002
-DB_HOST: db
-DB_USER: postgres
-DB_PASSWORD: postgres
-DB_NAME: fooddash
-```
-
-### order-service
-```
-PORT: 3003
-DB_HOST: db
-DB_USER: postgres
-DB_PASSWORD: postgres
-DB_NAME: fooddash
-JWT_SECRET: fooddash-secret
-```
-
-> **Cloud Engineer Note:** These values are hardcoded for local development only.
-> In AWS production — DB_PASSWORD and JWT_SECRET will be stored in AWS Secrets Manager.
-> DB_HOST will point to the RDS endpoint. PORT and DB_NAME will come from AWS Parameter Store.
-> No credentials will ever be hardcoded in production infrastructure.
-
----
-
-## 6. How to Run Locally
+Requirements: Docker Engine and the Docker Compose plugin.
 
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd fooddash
-
-# Start all services with Docker Compose
-docker-compose up --build
-
-# Services will be available at:
-# Frontend        → http://localhost:3000
-# user-service    → http://localhost:3001
-# restaurant-service → http://localhost:3002
-# order-service   → http://localhost:3003
+docker compose up --build
 ```
 
-### Sandbox frontend deployment
-
-The frontend uses `VITE_API_BASE_URL` as its API origin, with the sandbox ALB
-as the default. Set this variable when building if the sandbox ALB hostname
-changes, then upload the new `frontend/dist` files to the S3 origin and
-invalidate the CloudFront distribution so it stops serving the previous
-JavaScript bundle:
+Open the frontend at <http://localhost:3000>. The Compose configuration points the frontend at the locally exposed API services. To stop the containers, run:
 
 ```bash
-cd frontend
-VITE_API_BASE_URL=http://fooddash-alb-1673047144.ap-south-2.elb.amazonaws.com npm run build
-aws s3 sync dist/ s3://<sandbox-frontend-bucket>/
-aws cloudfront create-invalidation --distribution-id <sandbox-distribution-id> --paths "/*"
+docker compose down
 ```
 
-An absolute API origin keeps requests independent of whether the page was
-opened through the ALB or CloudFront. If CloudFront serves the page over HTTPS,
-the browser will block calls to this HTTP ALB as mixed content; use an HTTPS API
-origin or configure CloudFront to forward `/api/*` to the ALB.
+The database volume is retained by default. To remove local database data too, run `docker compose down --volumes`.
 
----
+The credentials in `docker-compose.yml` are demo-only local defaults. Do not reuse them outside a disposable development environment.
 
-## 7. Cloud Infrastructure — What Will Be Built on AWS
+## Repository layout
 
-This application will be deployed on AWS with the following infrastructure:
+```text
+.
+├── .github/workflows/fooddash-ci.yml
+├── frontend/
+├── order-service/
+├── restaurant-service/
+├── user-service/
+├── scripts/deploy.sh
+└── docker-compose.yml
+```
 
-| Phase | What Gets Built |
-|---|---|
-| Phase 2 | VPC, Subnets, Internet Gateway, NAT Gateway, Route Tables, Security Groups |
-| Phase 3 | EC2 instances, RDS PostgreSQL, database connection |
-| Phase 4A | Application Load Balancer, Target Groups, Path-based routing, Health checks |
-| Phase 4B | Auto Scaling Group, Launch Template, AMI, Crash testing |
-| Phase 5 | S3 Static hosting, CloudFront for frontend |
-| Phase 6 | Terraform — provision entire infrastructure as code |
-| Phase 7 | GitHub Actions CI/CD — automate build and deploy |
+## CI/CD status
 
----
+The current workflow is tied to the `feature/docker-cicd-1` branch and targets an AWS sandbox. It uses repository-configured AWS credentials and an SSM-based deployment script. It is work in progress: security scanning does not fail the build, and the workflow does not provide a reviewed, protected production release process. Do not use it to deploy a production workload.
 
-*Document written by: Associate Cloud Engineer*
-*Purpose: Cloud infrastructure reference for FoodDash application deployment on AWS*
+## Related project
+
+The separate [`fooddash-infra`](https://github.com/sankalpmax/fooddash-infra) repository contains Terraform examples for AWS infrastructure. Its directory and branch names are not a claim that the system is production-ready.
