@@ -41,10 +41,6 @@ DB_PASSWORD=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['D
 DB_NAME=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['DB_NAME'])" "$SECRET_JSON")
 JWT_SECRET=$(python3 -c "import json,sys; d=json.loads(sys.argv[1]); print(d['JWT_SECRET'])" "$SECRET_JSON")
 
-echo "DB_HOST: $DB_HOST"
-echo "DB_NAME: $DB_NAME"
-echo "Secrets fetched successfully"
-
 # Export so the Python heredoc can read them via os.environ
 export DB_HOST DB_USER DB_PASSWORD DB_NAME JWT_SECRET
 
@@ -119,6 +115,9 @@ COMMAND_ID=$(aws ssm send-command \
   --output text)
 
 echo "SSM Command ID: $COMMAND_ID"
+
+# Clean up the temporary payload file containing secret values
+rm -f /tmp/ssm-deploy.json
 
 # ── 6. Poll for completion ────────────────────────────────────────────────────
 STATUS="InProgress"

@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - feature/docker-cicd-1  # Triggers when you push commits to this branch
+    paths:
+      - 'user-service/**'
+      - 'restaurant-service/**'
+      - 'order-service/**'
+      - 'frontend/**'
+      - 'docker-compose.yml'
 
 jobs:
   # JOB 1: Build and push user-service

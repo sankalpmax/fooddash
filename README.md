@@ -123,7 +123,7 @@ Push to feature/docker-cicd-1
 - Production database credentials and JWT secrets are stored in AWS Secrets Manager, not in the repository.
 - The services set `rejectUnauthorized: false` for database TLS when connecting to a non-local host. This disables certificate verification and should not be used in production.
 - The EC2 security group allows SSH from a single IP. Review this before any shared use.
-- The deploy script fetches secrets on the GitHub Actions runner and passes them as plain values to EC2 via SSM. They are not written to disk on the runner.
+- The deploy script fetches secrets on the GitHub Actions runner, writes them to a temporary SSM payload file (`/tmp/ssm-deploy.json`), and sends it to EC2 via SSM Run Command. The file is deleted after the command is sent. Ideally the EC2 instance should retrieve secrets through its own IAM role instead of the runner handling them.
 
 ## Completed and in progress
 
@@ -148,6 +148,8 @@ Push to feature/docker-cicd-1
 - ALB uses HTTP only — no HTTPS listener or certificate
 - Pipeline triggers only on `feature/docker-cicd-1`, not on `main` or pull requests
 - Deployment targets a single sandbox EC2 instance, not a scaled fleet
+- The latest pipeline run (commit `b855e73`) failed at the user-service health check during deployment
+- No Terraform modules — both roots use direct resource declarations
 - No Terraform modules — both roots use direct resource declarations
 
 ## Related project
