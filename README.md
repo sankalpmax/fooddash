@@ -62,9 +62,93 @@ The credentials in `docker-compose.yml` are demo-only local defaults. Do not reu
 └── docker-compose.yml
 ```
 
-## CI/CD status
+## CI/CD pipeline
 
-The current workflow is tied to the `feature/docker-cicd-1` branch and targets an AWS sandbox. It uses repository-configured AWS credentials and an SSM-based deployment script. It is work in progress: security scanning does not fail the build, and the workflow does not provide a reviewed, protected production release process. Do not use it to deploy a production workload.
+The workflow lives at `.github/workflows/fooddash-ci.yml` and triggers on push to `feature/docker-cicd-1`. It targets an AWS sandbox in `ap-south-2`, not a production environment.
+
+```text
+Push to feature/docker-cicd-1
+        │
+        ├──► JOB 1: user-service        ─┐
+        ├──► JOB 2: restaurant-service   ─┤
+        ├──► JOB 3: order-service         ─┤  (4 jobs run in parallel)
+        └──► JOB 4: frontend              ─┘
+                │
+                │  1. Checkout code
+                │  2. Configure AWS credentials (IAM keys from repo secrets)
+                │  3. Login to Amazon ECR
+                │  4. Build Docker image (tagged with commit SHA)
+                │  5. Trivy scan — CRITICAL + HIGH only
+                │     └─ exit-code: 0 → findings do NOT block the build
+                │  6. Push image to ECR
+                │
+                ▼
+        JOB 5: deploy (runs only after all 4 builds succeed)
+                │
+                │  1. Checkout code + configure AWS credentials
+                │  2. Run scripts/deploy.sh:
+                │     a. Find EC2 instance via SSM tag (ASG group name)
+                │     b. Fetch DB credentials + JWT secret from Secrets Manager
+                │     c. Generate SSM Run Command JSON on the runner
+                │     d. Send command to EC2 via SSM Run Command
+                │     e. EC2 pulls images from ECR, stops old containers,
+                │        starts new ones with --network host
+                │     f. Health checks: 5 retries per service on ports 3000-3003
+                │     g. Poll SSM command status (up to 15 min)
+                │  3. Print deployment output (success or failure)
+                │
+                ▼
+        Result: containers running on EC2, or pipeline fails
+```
+
+| Step | Trigger | Tools | Destination | Outcome |
+|---|---|---|---|---|
+| Build | Push to `feature/docker-cicd-1` | Docker, GitHub Actions runner | Local image on runner | 4 images built in parallel |
+| Scan | After build | Trivy (CRITICAL, HIGH) | Console output | Findings reported but **do not fail** the build (`exit-code: 0`) |
+| Push | After scan | Amazon ECR login | ECR repos in `ap-south-2` | Images tagged with commit SHA |
+| Deploy | After all 4 pushes succeed | AWS SSM Run Command, Secrets Manager | EC2 instance in sandbox VPC | Containers started with health checks |
+
+**Honest limitations of this pipeline:**
+
+- Trivy reports vulnerabilities but does not gate the build. A critical finding will not stop the pipeline.
+- There is no manual approval gate between image push and deploy.
+- AWS authentication uses long-lived IAM keys stored as GitHub secrets, not OIDC.
+- There are no automated tests. The pipeline builds, scans, pushes, and deploys but never runs a test suite.
+- The workflow only runs on `feature/docker-cicd-1`. It is not wired to `main` or to pull requests.
+- Deployment targets a single sandbox EC2 instance, not a scaled or multi-AZ fleet.
+
+## Security notes
+
+- `docker-compose.yml` contains demo-only local credentials. Do not reuse them.
+- Production database credentials and JWT secrets are stored in AWS Secrets Manager, not in the repository.
+- The services set `rejectUnauthorized: false` for database TLS when connecting to a non-local host. This disables certificate verification and should not be used in production.
+- The EC2 security group allows SSH from a single IP. Review this before any shared use.
+- The deploy script fetches secrets on the GitHub Actions runner and passes them as plain values to EC2 via SSM. They are not written to disk on the runner.
+
+## Completed and in progress
+
+**Completed:**
+
+- Microservices application: user-service, restaurant-service, order-service, frontend
+- Docker Compose local development environment with PostgreSQL 15
+- Dockerfiles for all services (multi-stage build for frontend)
+- GitHub Actions pipeline: parallel build of 4 images, push to ECR, SSM-based deploy
+- Trivy vulnerability scanning integrated into the pipeline (informational)
+- SSM Run Command deployment with health checks and retry logic
+- AWS infrastructure provisioned with Terraform (separate repository)
+- Read-only infrastructure audit comparing source, state, and AWS
+
+**In progress / incomplete:**
+
+- Trivy scans do not block builds (`exit-code: 0`) — security findings are reported but not enforced
+- No automated test suite exists or runs in the pipeline
+- No manual approval gate between image push and deployment
+- AWS authentication uses IAM keys, not OIDC
+- Database TLS certificate verification is disabled in production (`rejectUnauthorized: false`)
+- ALB uses HTTP only — no HTTPS listener or certificate
+- Pipeline triggers only on `feature/docker-cicd-1`, not on `main` or pull requests
+- Deployment targets a single sandbox EC2 instance, not a scaled fleet
+- No Terraform modules — both roots use direct resource declarations
 
 ## Related project
 
