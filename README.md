@@ -64,10 +64,11 @@ The credentials in `docker-compose.yml` are demo-only local defaults. Do not reu
 
 ## CI/CD pipeline
 
-The workflow lives at `.github/workflows/fooddash-ci.yml` and triggers on push to `feature/docker-cicd-1`. It targets an AWS sandbox in `ap-south-2`, not a production environment.
+The workflow lives at `.github/workflows/fooddash-ci.yml`. It runs on pushes to `feature/docker-cicd-1` that change one of the four service directories, and it can also be started manually with `workflow_dispatch`. It targets the AWS sandbox in `ap-south-2`, not a production environment.
 
 ```text
-Push to feature/docker-cicd-1
+Push to an allowlisted service path on feature/docker-cicd-1
+or manually dispatch the workflow
         │
         ├──► JOB 1: user-service        ─┐
         ├──► JOB 2: restaurant-service   ─┤
@@ -87,7 +88,7 @@ Push to feature/docker-cicd-1
                 │
                 │  1. Checkout code + configure AWS credentials
                 │  2. Run scripts/deploy.sh:
-                │     a. Find EC2 instance via SSM tag (ASG group name)
+                │     a. Select an ASG instance in `InService` + `Healthy` state and confirm SSM reports it `Online` (wait up to 3 minutes)
                 │     b. Fetch DB credentials + JWT secret from Secrets Manager
                 │     c. Generate SSM Run Command JSON on the runner
                 │     d. Send command to EC2 via SSM Run Command
@@ -114,7 +115,7 @@ Push to feature/docker-cicd-1
 - There is no manual approval gate between image push and deploy.
 - AWS authentication uses long-lived IAM keys stored as GitHub secrets, not OIDC.
 - There are no automated tests. The pipeline builds, scans, pushes, and deploys but never runs a test suite.
-- The workflow only runs on `feature/docker-cicd-1`. It is not wired to `main` or to pull requests.
+- Automatic push runs are limited to `feature/docker-cicd-1` and the four service directories. Manual dispatch is available; `main` and pull requests do not trigger deployment.
 - Deployment targets a single sandbox EC2 instance, not a scaled or multi-AZ fleet.
 
 ## Security notes
@@ -132,9 +133,9 @@ Push to feature/docker-cicd-1
 - Microservices application: user-service, restaurant-service, order-service, frontend
 - Docker Compose local development environment with PostgreSQL 15
 - Dockerfiles for all services (multi-stage build for frontend)
-- GitHub Actions pipeline: parallel build of 4 images, push to ECR, SSM-based deploy
+- GitHub Actions workflow implemented: parallel build of four images, ECR push, and SSM deployment steps
 - Trivy vulnerability scanning integrated into the pipeline (informational)
-- SSM Run Command deployment with health checks and retry logic
+- SSM Run Command deployment step with health checks and retry logic implemented; successful end-to-end deployment is still being verified
 - AWS infrastructure provisioned with Terraform (separate repository)
 - Read-only infrastructure audit comparing source, state, and AWS
 
@@ -146,11 +147,10 @@ Push to feature/docker-cicd-1
 - AWS authentication uses IAM keys, not OIDC
 - Database TLS certificate verification is disabled in production (`rejectUnauthorized: false`)
 - ALB uses HTTP only — no HTTPS listener or certificate
-- Pipeline triggers only on `feature/docker-cicd-1`, not on `main` or pull requests
+- Automatic push triggers only on `feature/docker-cicd-1` service changes; manual dispatch is available, while `main` and pull requests do not deploy
 - Deployment targets a single sandbox EC2 instance, not a scaled fleet
-- The latest checked run (`56d933a`) built and pushed all four images, but SSM returned `Undeliverable` before command execution; a read-only lookup returned no managed-instance record for the target. This run did not reach the application health checks, so the sandbox deployment is not verified.
+- An earlier run built and pushed all four images, then SSM returned `Undeliverable` because its target instance had been retired. The deploy script now selects a current healthy ASG instance and requires SSM `Online` before sending a command. A successful run of this updated path is still pending.
 - The order-service status endpoint enforces forward-only transitions but does not restrict who may advance the status — any authenticated user can advance their own order to `delivered`. Role-based authorization is needed before production use
-- No Terraform modules — both roots use direct resource declarations
 - No Terraform modules — both roots use direct resource declarations
 
 ## Related project
