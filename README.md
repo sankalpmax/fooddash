@@ -148,7 +148,7 @@ Push to feature/docker-cicd-1
 - ALB uses HTTP only — no HTTPS listener or certificate
 - Pipeline triggers only on `feature/docker-cicd-1`, not on `main` or pull requests
 - Deployment targets a single sandbox EC2 instance, not a scaled fleet
-- Both recent pipeline runs (commits `b855e73` and `56d933a`) failed at the deploy stage; the latest failed faster, suggesting the EC2 instance may need manual recovery
+- The latest checked run (`56d933a`) built and pushed all four images, but SSM returned `Undeliverable` before command execution; a read-only lookup returned no managed-instance record for the target. This run did not reach the application health checks, so the sandbox deployment is not verified.
 - The order-service status endpoint enforces forward-only transitions but does not restrict who may advance the status — any authenticated user can advance their own order to `delivered`. Role-based authorization is needed before production use
 - No Terraform modules — both roots use direct resource declarations
 - No Terraform modules — both roots use direct resource declarations
