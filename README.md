@@ -135,7 +135,7 @@ or manually dispatch the workflow
 - Dockerfiles for all services (multi-stage build for frontend)
 - GitHub Actions workflow implemented: parallel build of four images, ECR push, and SSM deployment steps
 - Trivy vulnerability scanning integrated into the pipeline (informational)
-- SSM Run Command deployment step with health checks and retry logic implemented; successful end-to-end deployment is still being verified
+- Successful end-to-end sandbox run verified: four images built, scanned, and pushed; SSM deployed them and all configured service health checks passed (run [#42039399611](https://github.com/sankalpmax/fooddash/actions/runs/42039399611))
 - AWS infrastructure provisioned with Terraform (separate repository)
 - Read-only infrastructure audit comparing source, state, and AWS
 
@@ -149,7 +149,7 @@ or manually dispatch the workflow
 - ALB uses HTTP only — no HTTPS listener or certificate
 - Automatic push triggers only on `feature/docker-cicd-1` service changes; manual dispatch is available, while `main` and pull requests do not deploy
 - Deployment targets a single sandbox EC2 instance, not a scaled fleet
-- The latest manual run (`42037217073`) built, scanned, and pushed all four images; SSM reached the current healthy instance and pulled them. Deployment then failed the user-service health check on port 3001. A read-only check found the RDS instance stopped, which may explain the failure but has not been confirmed as the cause. No successful end-to-end deployment is claimed.
+- An earlier run reached SSM but failed the user-service health check while the sandbox database was stopped. After starting the database and retrying, run [#42039399611](https://github.com/sankalpmax/fooddash/actions/runs/42039399611) completed the deployment and health checks.
 - The order-service status endpoint enforces forward-only transitions but does not restrict who may advance the status — any authenticated user can advance their own order to `delivered`. Role-based authorization is needed before production use
 - No Terraform modules — both roots use direct resource declarations
 
