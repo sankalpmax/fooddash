@@ -9,18 +9,40 @@
 
 set -euo pipefail
 
-# ── 1. Find the SSM-managed EC2 instance ─────────────────────────────────────
-echo ">>> Finding EC2 instance..."
-INSTANCE_ID=$(aws ssm describe-instance-information \
-  --filter "Key=tag:aws:autoscaling:groupName,Values=fooddash-asg" \
-  --query 'InstanceInformationList[0].InstanceId' \
-  --output text)
+# ── 1. Find a healthy, SSM-online EC2 instance in the Auto Scaling group ──
+echo ">>> Waiting for a healthy SSM-managed instance in fooddash-asg..."
+INSTANCE_ID=""
+MAX_DISCOVERY_ATTEMPTS=18
 
-if [ -z "$INSTANCE_ID" ] || [ "$INSTANCE_ID" = "None" ]; then
-  echo "ERROR: No SSM-managed EC2 instance found with tag Project=fooddash"
+for attempt in $(seq 1 "$MAX_DISCOVERY_ATTEMPTS"); do
+  CANDIDATE_ID=$(aws autoscaling describe-auto-scaling-groups \
+    --auto-scaling-group-names fooddash-asg \
+    --query "AutoScalingGroups[0].Instances[?LifecycleState=='InService' && HealthStatus=='Healthy'].InstanceId | [0]" \
+    --output text)
+
+  if [ -n "$CANDIDATE_ID" ] && [ "$CANDIDATE_ID" != "None" ]; then
+    PING_STATUS=$(aws ssm describe-instance-information \
+      --filters "Key=InstanceIds,Values=$CANDIDATE_ID" \
+      --query 'InstanceInformationList[0].PingStatus' \
+      --output text)
+
+    if [ "$PING_STATUS" = "Online" ]; then
+      INSTANCE_ID="$CANDIDATE_ID"
+      break
+    fi
+  fi
+
+  echo "No healthy SSM-online instance yet ($attempt/$MAX_DISCOVERY_ATTEMPTS)."
+  if [ "$attempt" -lt "$MAX_DISCOVERY_ATTEMPTS" ]; then
+    sleep 10
+  fi
+done
+
+if [ -z "$INSTANCE_ID" ]; then
+  echo "ERROR: fooddash-asg did not provide an InService, Healthy, SSM-online instance within 3 minutes."
   exit 1
 fi
-echo "Found instance: $INSTANCE_ID"
+echo "Found a healthy SSM-online instance in fooddash-asg."
 
 # ── 2. Fetch secrets HERE on the GitHub runner ───────────────────────────────
 # This avoids all JSON parsing complexity on the EC2 instance.
