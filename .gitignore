@@ -19,5 +19,8 @@ frontend/dist/
 .$*.bkp
 .$*.dtmp
 
+# Root-level lockfile (no root package.json; each service has its own)
+/package-lock.json
+
 # Archives
 *.zip
