@@ -9,7 +9,9 @@ const pool = new Pool({
   user: process.env.DB_USER,
   password: process.env.DB_PASSWORD,
   database: process.env.DB_NAME,
-  ssl: { rejectUnauthorized: false }
+  ssl: process.env.DB_HOST === "db" || process.env.DB_HOST === "localhost"
+    ? false
+    : { rejectUnauthorized: false }
 });
 
 app.use(cors());
@@ -69,6 +71,88 @@ async function init() {
     );
     res.json(result.rows);
   });
+
+  // ── NEW FEATURE: Order Status Tracking ──────────────────────────────────
+  // GET /api/orders/:id/status → get current delivery status of an order
+  app.get("/api/orders/:id/status", auth, async (req, res) => {
+    const { id } = req.params;
+
+    const result = await pool.query(
+      "SELECT id, status, created_at FROM orders WHERE id=$1 AND user_id=$2",
+      [id, req.user.userId]
+    );
+
+    if (!result.rows.length) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    res.json({
+      orderId: result.rows[0].id,
+      status: result.rows[0].status,
+      createdAt: result.rows[0].created_at
+    });
+  });
+
+  // PATCH /api/orders/:id/status → advance delivery status by one step
+  // Valid transitions: pending → confirmed → preparing → out_for_delivery → delivered
+  // Only the next forward status is accepted; delivered is terminal.
+  app.patch("/api/orders/:id/status", auth, async (req, res) => {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    const validStatuses = ["pending", "confirmed", "preparing", "out_for_delivery", "delivered"];
+
+    if (!status || !validStatuses.includes(status)) {
+      return res.status(400).json({
+        message: "Invalid status",
+        validStatuses
+      });
+    }
+
+    // Fetch current status to enforce valid forward transitions only
+    const current = await pool.query(
+      "SELECT status FROM orders WHERE id=$1 AND user_id=$2",
+      [id, req.user.userId]
+    );
+
+    if (!current.rows.length) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    const currentStatus = current.rows[0].status;
+
+    const validTransitions = {
+      pending: "confirmed",
+      confirmed: "preparing",
+      preparing: "out_for_delivery",
+      out_for_delivery: "delivered"
+    };
+
+    const expectedNext = validTransitions[currentStatus];
+
+    if (!expectedNext || status !== expectedNext) {
+      return res.status(409).json({
+        message: "Invalid status transition",
+        currentStatus,
+        validNextStatus: expectedNext || "none (order already delivered)"
+      });
+    }
+
+    const result = await pool.query(
+      `UPDATE orders SET status=$1
+       WHERE id=$2 AND user_id=$3
+       RETURNING id, status, created_at`,
+      [status, id, req.user.userId]
+    );
+
+    res.json({
+      message: "Order status updated",
+      orderId: result.rows[0].id,
+      status: result.rows[0].status,
+      updatedAt: new Date().toISOString()
+    });
+  });
+  // ── END: Order Status Tracking ───────────────────────────────────────────
 
   app.listen(process.env.PORT, () =>
     console.log("Order service running on port 3003")

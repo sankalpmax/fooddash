@@ -1,0 +1,248 @@
+name: FoodDash Backend CI/CD  # Pipeline name 
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/docker-cicd-1  # Triggers when you push commits to this branch
+    paths:
+      - 'user-service/**'
+      - 'restaurant-service/**'
+      - 'order-service/**'
+      - 'frontend/**'
+
+jobs:
+  # JOB 1: Build and push user-service
+  build-and-push-user-service:
+    runs-on: ubuntu-latest  # GitHub spawns a fresh Ubuntu VM in their cloud (not your local machine)
+
+    steps:
+      # Step 1: Clone your repository code into the runner's workspace
+      - name: Checkout code
+        uses: actions/checkout@v3  # Without this, the runner is a blank VM with no code
+
+      # Step 2: Authenticate GitHub Actions to your AWS account using IAM user credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}  # Reads encrypted secret from GitHub repo settings
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}  # Never hardcoded in workflow
+          aws-region: ${{ secrets.AWS_REGION }}  # ap-south-2 (your sandbox)
+
+      # Step 3: Login to Amazon ECR to get a push token (valid for 12 hours)
+      - name: Login to Amazon ECR
+        id: login-ecr  # Stores output in 'steps.login-ecr.outputs.registry'
+        uses: aws-actions/amazon-ecr-login@v2  # Calls 'aws ecr get-login-password' behind the scenes
+
+      # Step 4: Build Docker image LOCALLY on the GitHub runner (not in ECR yet)
+      - name: Build user-service image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}  # Your ECR URL: 926239637076.dkr.ecr.ap-south-2.amazonaws.com
+          IMAGE_TAG: ${{ github.sha }}  # Commit SHA (e.g., abc123def456) - immutable, traceable tag
+        run: |
+          # Reads ./user-service/Dockerfile and builds image locally on the runner
+          # Tags it with full ECR URI so Docker knows where to push
+          docker build -t $ECR_REGISTRY/fooddash/user-service:$IMAGE_TAG ./user-service
+      ##Trivy Scan
+      - name: Trivy scan user-service 
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/fooddash/user-service:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0 
+        
+        # Step 5: Push the LOCAL image to ECR (remote registry)
+      - name: Push user-service to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Uploads image layers to ECR repo in ap-south-2
+          # Image becomes visible in: AWS Console → ECR → ap-south-2 → fooddash/user-service
+          docker push $ECR_REGISTRY/fooddash/user-service:$IMAGE_TAG
+
+  # JOB 2: Build and push restaurant-service (runs in PARALLEL with Job 1 and Job 3)
+  build-and-push-restaurant-service:
+    runs-on: ubuntu-latest  # GitHub spawns a SEPARATE Ubuntu VM for this job
+
+    steps:
+      # Clone repository code (each job needs its own checkout - runners don't share filesystems)
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Authenticate to AWS (each job needs its own authentication)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Login to ECR (each job needs its own ECR login token)
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Build restaurant-service image locally on this job's runner
+      - name: Build restaurant-service image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Reads ./restaurant-service/Dockerfile
+          docker build -t $ECR_REGISTRY/fooddash/restaurant-service:$IMAGE_TAG ./restaurant-service
+      ## Trivy Scan 
+      - name: Trivy scan restaurant-service
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/fooddash/restaurant-service:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0    
+
+
+
+      # Push restaurant-service image to ECR
+      - name: Push restaurant-service to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Uploads to: ECR → ap-south-2 → fooddash/restaurant-service
+          docker push $ECR_REGISTRY/fooddash/restaurant-service:$IMAGE_TAG
+
+  # JOB 3: Build and push order-service (runs in PARALLEL with Job 1 and Job 2)
+  build-and-push-order-service:
+    runs-on: ubuntu-latest  # GitHub spawns a THIRD separate Ubuntu VM for this job
+
+    steps:
+      # Clone repository code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Authenticate to AWS
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Login to ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Build order-service image locally on this job's runner
+      - name: Build order-service image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Reads ./order-service/Dockerfile
+          docker build -t $ECR_REGISTRY/fooddash/order-service:$IMAGE_TAG ./order-service
+      ## Trivy Scan 
+      - name: Trivy scan order-service 
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/fooddash/order-service:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0
+
+      # Push order-service image to ECR
+      - name: Push order-service to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Uploads to: ECR → ap-south-2 → fooddash/order-service
+          docker push $ECR_REGISTRY/fooddash/order-service:$IMAGE_TAG
+
+  # JOB 4: Build and push frontend
+  # Runs in PARALLEL with the 3 backend service build jobs (Jobs 1-3)
+  build-and-push-frontend:
+    runs-on: ubuntu-latest
+
+    steps:
+      # Clone repository code
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Authenticate to AWS (each job needs its own authentication)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Login to ECR (each job needs its own ECR login token)
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Build frontend image locally on this job's runner
+      - name: Build frontend image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Reads ./frontend/Dockerfile
+          # Frontend is a Vite + React app served on port 3000
+          docker build -t $ECR_REGISTRY/fooddash/frontend:$IMAGE_TAG ./frontend
+      ## Trivy Scan 
+      - name: Trivy scan frontend 
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ steps.login-ecr.outputs.registry }}/fooddash/frontend:${{ github.sha }}
+          format: table
+          severity: CRITICAL,HIGH
+          exit-code: 0      
+      # Push frontend image to ECR
+      - name: Push frontend to ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Uploads to: ECR → ap-south-2 → fooddash/frontend
+          docker push $ECR_REGISTRY/fooddash/frontend:$IMAGE_TAG
+
+  # JOB 5: Deploy to EC2 via SSM Run Command
+  # Runs ONLY AFTER all 4 build jobs succeed (needs: [...])
+  # This is the "CD" (Continuous Deployment) part of the pipeline
+  deploy:
+    needs:
+      - build-and-push-user-service
+      - build-and-push-restaurant-service
+      - build-and-push-order-service
+      - build-and-push-frontend
+    runs-on: ubuntu-latest
+
+    steps:
+      # Clone the repo so we have access to scripts/deploy.sh
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      # Authenticate to AWS (needed for SSM Send Command + ECR login)
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      # Login to ECR (to get the registry URL for the deploy script)
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Core CD step: calls scripts/deploy.sh which generates the SSM JSON
+      # and sends it to the EC2 instance, then polls for completion
+      - name: Deploy to EC2 via SSM Run Command
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          IMAGE_TAG: ${{ github.sha }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+        run: bash scripts/deploy.sh

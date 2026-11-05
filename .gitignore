@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Build output
+frontend/dist/
+
+# OS/editor files
+.DS_Store
+*.swp
+*.swo
+*~
+
+# Drawio temp/backup files
+.$*.bkp
+.$*.dtmp
+
+# Root-level lockfile (no root package.json; each service has its own)
+/package-lock.json
+
+# Archives
+*.zip

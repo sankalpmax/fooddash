@@ -1,208 +1,158 @@
-# FoodDash — Food Ordering Application
+# FoodDash
 
-## 1. Business Problem
+FoodDash is a portfolio project for a food-ordering application. It contains a React frontend, three Node.js/Express services, and a PostgreSQL database. It is a learning project, not a commercial product or a production-ready service.
 
-FoodDash is a Bangalore based food ordering startup. The development team has built a working application running on a developer's laptop in a local development environment.
+## Project status
 
-The business problem is simple — we have a working application but no infrastructure to serve real customers.
+- The application and Docker Compose setup are prototypes.
+- The GitHub Actions workflow on `feature/docker-cicd-1` is experimental. It builds and publishes container images and invokes an AWS sandbox deployment; it is not a production release pipeline.
+- The workflow's vulnerability scans are currently informational and do not block a deployment.
+- Authentication, authorization, input validation, database TLS, and deployment secret handling need further security work before any production use.
+- AWS infrastructure and application deployment status can change. The Terraform repository documents the infrastructure code separately.
 
-As the Associate Cloud Engineer, the job is to take this application from a developer's laptop to a production environment on AWS — securely, reliably, and with the ability to handle peak traffic during lunch and dinner hours without going down.
+## Architecture
 
-**Three things every cloud infrastructure decision must solve:**
-- **Secure** — database must not be exposed to the internet, credentials must not be hardcoded, network access must be controlled
-- **Reliable** — if one server goes down, the application must keep running, database must have automatic failover
-- **Scalable** — during lunch and dinner hours when traffic spikes, infrastructure must automatically add capacity and remove it when traffic drops
+```text
+Browser
+  └── React + Vite frontend (port 3000)
+        ├── user-service       (port 3001)
+        ├── restaurant-service (port 3002)
+        └── order-service      (port 3003)
+              └── PostgreSQL 15 (port 5432)
+```
 
----
+The services use a shared PostgreSQL database in this prototype. The frontend calls each service through `/api/users`, `/api/restaurants`, and `/api/orders` routes. The `order-service` stores order items as JSON and includes basic JWT-protected order endpoints.
 
-## 2. Application Type
-
-FoodDash is a **Microservices application**.
-
-Each feature is built as an independent service with its own codebase, its own port, and its own responsibility. Services can be deployed, scaled, and updated independently without affecting other services.
-
-**Services:**
-- user-service
-- restaurant-service
-- order-service
-- frontend
-
----
-
-## 3. Features, Services, Ports and Tech Stack
-
-| Layer | Service | Tech Stack | Port | Responsibility |
-|---|---|---|---|---|
-| Frontend | frontend | React + Vite | 3000 | Customer UI — browse restaurants, place orders, login |
-| Backend | user-service | Node.js + Express | 3001 | User registration, login, JWT authentication |
-| Backend | restaurant-service | Node.js + Express | 3002 | List restaurants, view menu items |
-| Backend | order-service | Node.js + Express | 3003 | Place order, view order history |
-| Database | PostgreSQL 15 | PostgreSQL | 5432 | Permanent storage for all services |
-
-### Service Dependencies
-
-**user-service**
-- express, cors, bcryptjs, jsonwebtoken, pg
-
-**restaurant-service**
-- express, cors, pg
-
-**order-service**
-- express, cors, jsonwebtoken, pg
-
-**frontend**
-- react, react-dom, vite, @vitejs/plugin-react
-
-### Database Tables
-
-| Table | Owned By | What It Stores |
+| Component | Stack | Responsibility |
 |---|---|---|
-| users | user-service | id, name, email, password, created_at |
-| restaurants | restaurant-service | id, name, cuisine, location, rating |
-| menu_items | restaurant-service | id, restaurant_id, name, price, description |
-| orders | order-service | id, user_id, restaurant_id, items, total_amount, status, created_at |
+| `frontend/` | React, Vite | Browse restaurants, register/login, and interact with orders |
+| `user-service/` | Express, PostgreSQL, bcrypt, JWT | Registration and login |
+| `restaurant-service/` | Express, PostgreSQL | Restaurant and menu reads |
+| `order-service/` | Express, PostgreSQL, JWT | Create and view a user's orders |
+| `docker-compose.yml` | Docker Compose, PostgreSQL 15 | Local development environment |
 
----
+## Run locally
 
-## 4. How Services Talk to Each Other
-
-### Local Development Flow
-```
-Customer opens browser
-        ↓
-Frontend — port 3000
-        ↓
-Frontend makes direct API calls to backend services
-/api/users/*         → user-service port 3001
-/api/restaurants/*   → restaurant-service port 3002
-/api/orders/*        → order-service port 3003
-        ↓
-Each service connects to PostgreSQL port 5432
-        ↓
-order-service calls restaurant-service internally
-to validate menu items before placing order
-```
-
-### AWS Production Flow (after cloud infrastructure is built)
-```
-Customer opens browser
-        ↓
-Frontend — served from S3 + CloudFront
-        ↓
-Frontend makes API calls to ALB DNS
-        ↓
-ALB (Application Load Balancer) — single entry point
-routes based on URL path
-/api/users/*         → user-service target group port 3001
-/api/restaurants/*   → restaurant-service target group port 3002
-/api/orders/*        → order-service target group port 3003
-        ↓
-Each service connects to RDS PostgreSQL — private subnet port 5432
-        ↓
-order-service calls restaurant-service internally
-```
-
----
-
-## 5. Environment Variables
-
-### Database (docker-compose local)
-```
-POSTGRES_DB: fooddash
-POSTGRES_USER: postgres
-POSTGRES_PASSWORD: postgres
-```
-
-### user-service
-```
-PORT: 3001
-DB_HOST: db
-DB_USER: postgres
-DB_PASSWORD: postgres
-DB_NAME: fooddash
-JWT_SECRET: fooddash-secret
-```
-
-### restaurant-service
-```
-PORT: 3002
-DB_HOST: db
-DB_USER: postgres
-DB_PASSWORD: postgres
-DB_NAME: fooddash
-```
-
-### order-service
-```
-PORT: 3003
-DB_HOST: db
-DB_USER: postgres
-DB_PASSWORD: postgres
-DB_NAME: fooddash
-JWT_SECRET: fooddash-secret
-```
-
-> **Cloud Engineer Note:** These values are hardcoded for local development only.
-> In AWS production — DB_PASSWORD and JWT_SECRET will be stored in AWS Secrets Manager.
-> DB_HOST will point to the RDS endpoint. PORT and DB_NAME will come from AWS Parameter Store.
-> No credentials will ever be hardcoded in production infrastructure.
-
----
-
-## 6. How to Run Locally
+Requirements: Docker Engine and the Docker Compose plugin.
 
 ```bash
-# Clone the repository
-git clone <repo-url>
-cd fooddash
-
-# Start all services with Docker Compose
-docker-compose up --build
-
-# Services will be available at:
-# Frontend        → http://localhost:3000
-# user-service    → http://localhost:3001
-# restaurant-service → http://localhost:3002
-# order-service   → http://localhost:3003
+docker compose up --build
 ```
 
-### Sandbox frontend deployment
-
-The frontend uses `VITE_API_BASE_URL` as its API origin, with the sandbox ALB
-as the default. Set this variable when building if the sandbox ALB hostname
-changes, then upload the new `frontend/dist` files to the S3 origin and
-invalidate the CloudFront distribution so it stops serving the previous
-JavaScript bundle:
+Open the frontend at <http://localhost:3000>. The Compose configuration points the frontend at the locally exposed API services. To stop the containers, run:
 
 ```bash
-cd frontend
-VITE_API_BASE_URL=http://fooddash-alb-1673047144.ap-south-2.elb.amazonaws.com npm run build
-aws s3 sync dist/ s3://<sandbox-frontend-bucket>/
-aws cloudfront create-invalidation --distribution-id <sandbox-distribution-id> --paths "/*"
+docker compose down
 ```
 
-An absolute API origin keeps requests independent of whether the page was
-opened through the ALB or CloudFront. If CloudFront serves the page over HTTPS,
-the browser will block calls to this HTTP ALB as mixed content; use an HTTPS API
-origin or configure CloudFront to forward `/api/*` to the ALB.
+The database volume is retained by default. To remove local database data too, run `docker compose down --volumes`.
 
----
+The credentials in `docker-compose.yml` are demo-only local defaults. Do not reuse them outside a disposable development environment.
 
-## 7. Cloud Infrastructure — What Will Be Built on AWS
+## Repository layout
 
-This application will be deployed on AWS with the following infrastructure:
+```text
+.
+├── .github/workflows/fooddash-ci.yml
+├── frontend/
+├── order-service/
+├── restaurant-service/
+├── user-service/
+├── scripts/deploy.sh
+└── docker-compose.yml
+```
 
-| Phase | What Gets Built |
-|---|---|
-| Phase 2 | VPC, Subnets, Internet Gateway, NAT Gateway, Route Tables, Security Groups |
-| Phase 3 | EC2 instances, RDS PostgreSQL, database connection |
-| Phase 4A | Application Load Balancer, Target Groups, Path-based routing, Health checks |
-| Phase 4B | Auto Scaling Group, Launch Template, AMI, Crash testing |
-| Phase 5 | S3 Static hosting, CloudFront for frontend |
-| Phase 6 | Terraform — provision entire infrastructure as code |
-| Phase 7 | GitHub Actions CI/CD — automate build and deploy |
+## CI/CD pipeline
 
----
+The workflow lives at `.github/workflows/fooddash-ci.yml`. It runs on pushes to `feature/docker-cicd-1` that change one of the four service directories, and it can also be started manually with `workflow_dispatch`. It targets the AWS sandbox in `ap-south-2`, not a production environment.
 
-*Document written by: Associate Cloud Engineer*
-*Purpose: Cloud infrastructure reference for FoodDash application deployment on AWS*
+```text
+Push to an allowlisted service path on feature/docker-cicd-1
+or manually dispatch the workflow
+        │
+        ├──► JOB 1: user-service        ─┐
+        ├──► JOB 2: restaurant-service   ─┤
+        ├──► JOB 3: order-service         ─┤  (4 jobs run in parallel)
+        └──► JOB 4: frontend              ─┘
+                │
+                │  1. Checkout code
+                │  2. Configure AWS credentials (IAM keys from repo secrets)
+                │  3. Login to Amazon ECR
+                │  4. Build Docker image (tagged with commit SHA)
+                │  5. Trivy scan — CRITICAL + HIGH only
+                │     └─ exit-code: 0 → findings do NOT block the build
+                │  6. Push image to ECR
+                │
+                ▼
+        JOB 5: deploy (runs only after all 4 builds succeed)
+                │
+                │  1. Checkout code + configure AWS credentials
+                │  2. Run scripts/deploy.sh:
+                │     a. Select an ASG instance in `InService` + `Healthy` state and confirm SSM reports it `Online` (wait up to 3 minutes)
+                │     b. Fetch DB credentials + JWT secret from Secrets Manager
+                │     c. Generate SSM Run Command JSON on the runner
+                │     d. Send command to EC2 via SSM Run Command
+                │     e. EC2 pulls images from ECR, stops old containers,
+                │        starts new ones with --network host
+                │     f. Health checks: 5 retries per service on ports 3000-3003
+                │     g. Poll SSM command status (up to 15 min)
+                │  3. Print deployment output (success or failure)
+                │
+                ▼
+        Result: containers running on EC2, or pipeline fails
+```
+
+| Step | Trigger | Tools | Destination | Outcome |
+|---|---|---|---|---|
+| Build | Push to `feature/docker-cicd-1` | Docker, GitHub Actions runner | Local image on runner | 4 images built in parallel |
+| Scan | After build | Trivy (CRITICAL, HIGH) | Console output | Findings reported but **do not fail** the build (`exit-code: 0`) |
+| Push | After scan | Amazon ECR login | ECR repos in `ap-south-2` | Images tagged with commit SHA |
+| Deploy | After all 4 pushes succeed | AWS SSM Run Command, Secrets Manager | EC2 instance in sandbox VPC | Containers started with health checks |
+
+**Honest limitations of this pipeline:**
+
+- Trivy reports vulnerabilities but does not gate the build. A critical finding will not stop the pipeline.
+- There is no manual approval gate between image push and deploy.
+- AWS authentication uses long-lived IAM keys stored as GitHub secrets, not OIDC.
+- There are no automated tests. The pipeline builds, scans, pushes, and deploys but never runs a test suite.
+- Automatic push runs are limited to `feature/docker-cicd-1` and the four service directories. Manual dispatch is available; `main` and pull requests do not trigger deployment.
+- Deployment targets a single sandbox EC2 instance, not a scaled or multi-AZ fleet.
+
+## Security notes
+
+- `docker-compose.yml` contains demo-only local credentials. Do not reuse them.
+- Production database credentials and JWT secrets are stored in AWS Secrets Manager, not in the repository.
+- The services set `rejectUnauthorized: false` for database TLS when connecting to a non-local host. This disables certificate verification and should not be used in production.
+- The EC2 security group allows SSH from a single IP. Review this before any shared use.
+- The deploy script fetches secrets on the GitHub Actions runner, writes them to a temporary SSM payload file (`/tmp/ssm-deploy.json`), and sends it to EC2 via SSM Run Command. The file is deleted after the command is sent. Ideally the EC2 instance should retrieve secrets through its own IAM role instead of the runner handling them.
+
+## Completed and in progress
+
+**Completed:**
+
+- Microservices application: user-service, restaurant-service, order-service, frontend
+- Docker Compose local development environment with PostgreSQL 15
+- Dockerfiles for all services (multi-stage build for frontend)
+- GitHub Actions workflow implemented: parallel build of four images, ECR push, and SSM deployment steps
+- Trivy vulnerability scanning integrated into the pipeline (informational)
+- Successful end-to-end sandbox run verified: four images built, scanned, and pushed; SSM deployed them and all configured service health checks passed (run [#42039399611](https://github.com/sankalpmax/fooddash/actions/runs/42039399611))
+- AWS infrastructure provisioned with Terraform (separate repository)
+- Read-only infrastructure audit comparing source, state, and AWS
+
+**In progress / incomplete:**
+
+- Trivy scans do not block builds (`exit-code: 0`) — security findings are reported but not enforced
+- No automated test suite exists or runs in the pipeline
+- No manual approval gate between image push and deployment
+- AWS authentication uses IAM keys, not OIDC
+- Database TLS certificate verification is disabled in production (`rejectUnauthorized: false`)
+- ALB uses HTTP only — no HTTPS listener or certificate
+- Automatic push triggers only on `feature/docker-cicd-1` service changes; manual dispatch is available, while `main` and pull requests do not deploy
+- Deployment targets a single sandbox EC2 instance, not a scaled fleet
+- An earlier run reached SSM but failed the user-service health check while the sandbox database was stopped. After starting the database and retrying, run [#42039399611](https://github.com/sankalpmax/fooddash/actions/runs/42039399611) completed the deployment and health checks.
+- The order-service status endpoint enforces forward-only transitions but does not restrict who may advance the status — any authenticated user can advance their own order to `delivered`. Role-based authorization is needed before production use
+- No Terraform modules — both roots use direct resource declarations
+
+## Related project
+
+The separate [`fooddash-infra`](https://github.com/sankalpmax/fooddash-infra) repository contains Terraform examples for AWS infrastructure. Its directory and branch names are not a claim that the system is production-ready.
