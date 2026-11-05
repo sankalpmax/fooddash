@@ -149,7 +149,7 @@ or manually dispatch the workflow
 - ALB uses HTTP only — no HTTPS listener or certificate
 - Automatic push triggers only on `feature/docker-cicd-1` service changes; manual dispatch is available, while `main` and pull requests do not deploy
 - Deployment targets a single sandbox EC2 instance, not a scaled fleet
-- An earlier run built and pushed all four images, then SSM returned `Undeliverable` because its target instance had been retired. The deploy script now selects a current healthy ASG instance and requires SSM `Online` before sending a command. A successful run of this updated path is still pending.
+- The latest manual run (`42037217073`) built, scanned, and pushed all four images; SSM reached the current healthy instance and pulled them. Deployment then failed the user-service health check on port 3001. A read-only check found the RDS instance stopped, which may explain the failure but has not been confirmed as the cause. No successful end-to-end deployment is claimed.
 - The order-service status endpoint enforces forward-only transitions but does not restrict who may advance the status — any authenticated user can advance their own order to `delivered`. Role-based authorization is needed before production use
 - No Terraform modules — both roots use direct resource declarations
 
