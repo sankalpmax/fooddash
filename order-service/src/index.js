@@ -93,8 +93,9 @@ async function init() {
     });
   });
 
-  // PATCH /api/orders/:id/status → update delivery status of an order
+  // PATCH /api/orders/:id/status → advance delivery status by one step
   // Valid transitions: pending → confirmed → preparing → out_for_delivery → delivered
+  // Only the next forward status is accepted; delivered is terminal.
   app.patch("/api/orders/:id/status", auth, async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
@@ -108,16 +109,41 @@ async function init() {
       });
     }
 
+    // Fetch current status to enforce valid forward transitions only
+    const current = await pool.query(
+      "SELECT status FROM orders WHERE id=$1 AND user_id=$2",
+      [id, req.user.userId]
+    );
+
+    if (!current.rows.length) {
+      return res.status(404).json({ message: "Order not found" });
+    }
+
+    const currentStatus = current.rows[0].status;
+
+    const validTransitions = {
+      pending: "confirmed",
+      confirmed: "preparing",
+      preparing: "out_for_delivery",
+      out_for_delivery: "delivered"
+    };
+
+    const expectedNext = validTransitions[currentStatus];
+
+    if (!expectedNext || status !== expectedNext) {
+      return res.status(409).json({
+        message: "Invalid status transition",
+        currentStatus,
+        validNextStatus: expectedNext || "none (order already delivered)"
+      });
+    }
+
     const result = await pool.query(
       `UPDATE orders SET status=$1
        WHERE id=$2 AND user_id=$3
        RETURNING id, status, created_at`,
       [status, id, req.user.userId]
     );
-
-    if (!result.rows.length) {
-      return res.status(404).json({ message: "Order not found" });
-    }
 
     res.json({
       message: "Order status updated",
