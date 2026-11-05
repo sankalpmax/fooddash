@@ -1,6 +1,7 @@
 name: FoodDash Backend CI/CD  # Pipeline name 
 
 on:
+  workflow_dispatch:
   push:
     branches:
       - feature/docker-cicd-1  # Triggers when you push commits to this branch
